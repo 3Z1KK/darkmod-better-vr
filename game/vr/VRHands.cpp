@@ -22,6 +22,10 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "game/Item.h"
 #include "game/ai/AI.h"
 #include "game/Grabber.h"
+#include "game/BinaryFrobMover.h"
+#include "game/FrobHandle.h"
+#include "game/FrobDoor.h"
+#include "game/FrobDoorHandle.h"
 #include "renderer/vr/OpenXRBackend.h"
 
 idCVar vr_handsEnable( "vr_handsEnable", "1", CVAR_GAME | CVAR_BOOL, "VR: interact with the world through tracked hands" );
@@ -52,6 +56,7 @@ idCVar vr_ringRadius( "vr_ringRadius", "0.8", CVAR_GAME | CVAR_FLOAT, "VR: radiu
 idCVar vr_ringOffset( "vr_ringOffset", "-0.1", CVAR_GAME | CVAR_FLOAT, "VR: ring centre offset from the finger joint towards the back of the finger (game units)" );
 idCVar vr_calibrateHands( "vr_calibrateHands", "", CVAR_GAME, "VR: calibrate the glove position: \"fist\" (bump your fists together), \"palms\" (palms together) or \"reset\"" );
 idCVar vr_handsDebug( "vr_handsDebug", "0", CVAR_GAME | CVAR_BOOL, "VR: print hand interaction events" );
+idCVar vr_handsShowTouch( "vr_handsShowTouch", "0", CVAR_GAME | CVAR_BOOL, "VR: draw where the game thinks the hands are: touch spheres (green), palm collision box (yellow), controller (red)" );
 
 namespace {
 	const char *HAND_MATERIAL = "vr/hand_placeholder";
@@ -392,12 +397,19 @@ idEntity *idVRHand::FindTouchedEntity( idPlayer *player, int &bodyId ) const {
 			if ( !gameLocal.clip.ContentsModel( points[i].pos, sphereClip[slot], mat3_identity, -1, cm->Handle(), cm->GetOrigin(), cm->GetAxis() ) ) {
 				continue;
 			}
+			// doors are only held at their handle or latch (the rest is just solid)
+			if ( !idVRMovers::CanGripAt( target, points[i].pos ) ) {
+				continue;
+			}
 			int body = 0;
 			if ( target->IsType( idAFEntity_Base::Type ) && ent == target ) {
 				body = Max( 0, static_cast<idAFEntity_Base *>( target )->BodyForClipModelId( cm->GetId() ) );
 			}
 			const float dist = ( cm->GetAbsBounds().GetCenter() - physPos ).LengthFast();
-			const float score = points[i].palm ? 2.0f : 1.0f;
+			float score = points[i].palm ? 2.0f : 1.0f;
+			if ( target->IsType( CFrobHandle::Type ) ) {
+				score *= 4.0f;		// a handle wins over the door it sits on
+			}
 			bool found = false;
 			for ( int k = 0; k < candidates.Num(); k++ ) {
 				if ( candidates[k].ent == target ) {
@@ -501,15 +513,21 @@ void idVRHand::MoveFreeHand( idPlayer *player ) {
  * size-based mass. Only quick movements push: reaching for something slowly doesn't knock it away.
  */
 void idVRHand::BumpObject( idPlayer *player, const trace_t &tr ) {
-	if ( gripDown ) {
-		return;		// closing the hand to grab, not slapping
-	}
 	if ( tr.c.entityNum < 0 || tr.c.entityNum >= ENTITYNUM_WORLD ) {
 		return;
 	}
 	idEntity *ent = gameLocal.entities[tr.c.entityNum];
 	if ( ent == nullptr || ent == player || ent->IsHidden() ) {
 		return;
+	}
+	// open doors, lids and drawers give way to the hand (also to a fist, also slowly)
+	CBinaryFrobMover *mover = idVRMovers::GetPushMover( ent );
+	if ( mover != nullptr ) {
+		player->vrHands.GetMovers().Push( mover, tr.c.point, tr.c.normal, input.vel );
+		return;
+	}
+	if ( gripDown ) {
+		return;		// closing the hand to grab, not slapping
 	}
 	idPhysics *phys = ent->GetPhysics();
 	if ( !phys->IsType( idPhysics_RigidBody::Type ) && !phys->IsType( idPhysics_AF::Type ) ) {
@@ -687,6 +705,26 @@ void idVRHand::StartInteraction( idPlayer *player ) {
 		return;
 	}
 
+	CBinaryFrobMover *mover = idVRMovers::GetMover( ent );
+	if ( mover != nullptr ) {
+		// a door (at its handle or latch), lid, drawer...: held where the hand is, moved along its path
+		held = mover;
+		heldBodyId = 0;
+		moverPart = ent;
+		idPhysics *phys = mover->GetPhysics();
+		const idMat3 bodyAxisT = phys->GetAxis().Transpose();
+		grip.anchor = ( physPos - phys->GetOrigin() ) * bodyAxisT;
+		grip.handAxis = input.axis * bodyAxisT;
+		grip.controllerOffset = ( physPos - input.pos ) * input.axis.Transpose();
+		grip.contactPoint = grip.anchor;
+		grip.contactNormal.Zero();
+		slipTime = 0;
+		latchHeld = false;
+		interaction = IK_MOVER;
+		HandsDebug( "hand %d holds %s at %s (%s)", index, mover->name.c_str(), ent->name.c_str(), mover->IsOpen() ? "open" : "latched" );
+		return;
+	}
+
 	// anything else: the entity's normal frob action
 	interaction = IK_FROB;
 	held = ent;
@@ -700,7 +738,7 @@ void idVRHand::Release( idPlayer *player, bool allowInventory ) {
 	idEntity *ent = held.GetEntity();
 	const interactionKind_t kind = interaction;
 	// the free hand continues from where the drawn hand was
-	if ( kind == IK_HOLD && ent != nullptr ) {
+	if ( ( kind == IK_HOLD || kind == IK_MOVER ) && ent != nullptr ) {
 		idMat3 a;
 		GetGripWorld( physPos, a );
 	}
@@ -708,6 +746,15 @@ void idVRHand::Release( idPlayer *player, bool allowInventory ) {
 	held = nullptr;
 
 	if ( ent == nullptr ) {
+		return;
+	}
+
+	if ( kind == IK_MOVER ) {
+		// a let go door keeps swinging (idVRMovers keeps its speed)
+		PressHandle( false );
+		latchHeld = false;
+		moverPart = nullptr;
+		HandsDebug( "hand %d lets go of %s", index, ent->name.c_str() );
 		return;
 	}
 
@@ -781,6 +828,29 @@ void idVRHand::Release( idPlayer *player, bool allowInventory ) {
 	}
 }
 
+/*
+ * The visible handle turns down while the trigger holds it (like a hand pressing a door handle) and comes
+ * back up when it is let go. Only door handles move; lids and drawers have no handle part.
+ */
+void idVRHand::PressHandle( bool down ) {
+	idEntity *part = moverPart.GetEntity();
+	if ( part == nullptr || !part->IsType( CFrobHandle::Type ) ) {
+		return;
+	}
+	CFrobHandle *handle = static_cast<CFrobHandle *>( part );
+	if ( handle->IsChangingState() ) {
+		return;		// the handle is busy with its own animation
+	}
+	handle->SetFractionalPosition( down ? 1.0f : 0.0f, false );
+	if ( down && handle->IsType( CFrobDoorHandle::Type ) && handle->IsMasterHandle() ) {
+		// the handle's own sound, like turning it in the normal game
+		CFrobDoor *door = static_cast<CFrobDoorHandle *>( handle )->GetDoor();
+		if ( door != nullptr ) {
+			handle->FrobMoverStartSound( door->IsLocked() ? "snd_tap_locked" : "snd_tap_default" );
+		}
+	}
+}
+
 void idVRHand::UpdateRenderEntity() {
 	if ( !gameRenderWorld ) {
 		return;
@@ -830,6 +900,8 @@ void idVRHand::UpdateFingers( float dt ) {
 	idEntity *ent = held.GetEntity();
 	if ( ( interaction == IK_HOLD || interaction == IK_CARRY ) && ent != nullptr ) {
 		glove.FindContactCurls( ent->GetPhysics()->GetClipModel( interaction == IK_HOLD ? heldBodyId : 0 ), 85.0f, targets );
+	} else if ( interaction == IK_MOVER && moverPart.GetEntity() != nullptr ) {
+		glove.FindContactCurls( moverPart.GetEntity()->GetPhysics()->GetClipModel(), 85.0f, targets );
 	} else if ( interaction == IK_FROB ) {
 		for ( int f = 0; f < idVRHandModel::NUM_FINGERS; f++ ) {
 			targets[f] = 35.0f + input.grip * 30.0f;
@@ -853,6 +925,7 @@ void idVRHand::UpdateVisual( float dt ) {
 	if ( tracked ) {
 		switch ( interaction ) {
 		case IK_HOLD:
+		case IK_MOVER:
 			// the drawn hand stays on the grip point, even if the controller moved on
 			GetGripWorld( visualPos, visualAxis );
 			break;
@@ -887,14 +960,30 @@ void idVRHand::Update( idPlayer *player, const vrHandInput_t &in, float dt ) {
 		return;
 	}
 
+	const interactionKind_t interactionBefore = interaction;
+
 	// free hands are stopped by the world
-	if ( interaction != IK_HOLD ) {
+	if ( interaction != IK_HOLD && interaction != IK_MOVER ) {
 		MoveFreeHand( player );
 	}
 
 	// what is the hand touching?
 	int bodyId = 0;
 	idEntity *nowTouching = interaction == IK_NONE ? FindTouchedEntity( player, bodyId ) : nullptr;
+
+	if ( vr_handsShowTouch.GetBool() && gameRenderWorld ) {
+		idList<idVRHandModel::touchPoint_t> points;
+		if ( glove.IsValid() ) {
+			glove.GetTouchPoints( physPos, input.axis, points );
+		}
+		for ( const idVRHandModel::touchPoint_t &p : points ) {
+			gameRenderWorld->DebugSphere( nowTouching ? colorGreen : colorCyan, idSphere( p.pos, p.radius + vr_handTouchMargin.GetFloat() ), 0, false );
+		}
+		const float side = index == 0 ? 1.0f : -1.0f;
+		const idVec3 palmOffset( 0.0f, 1.3f * side, 2.2f );
+		gameRenderWorld->DebugBox( colorYellow, idBox( idBounds( idVec3( -1.8f, -0.75f, -2.4f ), idVec3( 1.8f, 0.75f, 2.4f ) ), physPos + palmOffset * input.axis, input.axis ), 0 );
+		gameRenderWorld->DebugSphere( colorRed, idSphere( input.pos, 0.4f ), 0, false );
+	}
 	touched = nowTouching;
 	touchedBodyId = bodyId;
 
@@ -937,6 +1026,19 @@ void idVRHand::Update( idPlayer *player, const vrHandInput_t &in, float dt ) {
 		}
 	}
 
+	// a held door handle (or lid, drawer): the trigger presses it down, which opens the latch while held
+	if ( interaction == IK_MOVER ) {
+		CBinaryFrobMover *mover = static_cast<CBinaryFrobMover *>( held.GetEntity() );
+		// (a trigger already squeezed when the hand closes on the handle presses it right away)
+		if ( triggerDown && ( !wasTrigger || interactionBefore != IK_MOVER ) && mover != nullptr ) {
+			latchHeld = mover->IsOpen() || idVRMovers::TryUnlatch( mover );
+			PressHandle( true );
+		} else if ( !triggerDown && wasTrigger ) {
+			latchHeld = false;
+			PressHandle( false );
+		}
+	}
+
 	// lockpicking goes on while the trigger is held at the lock
 	if ( lockUse.IsActive() ) {
 		if ( triggerDown && ( interaction == IK_HOLD || interaction == IK_CARRY ) ) {
@@ -956,6 +1058,31 @@ void idVRHand::Update( idPlayer *player, const vrHandInput_t &in, float dt ) {
 			ent->SetOrigin( in.pos + carryRelOrigin * in.axis );
 			if ( carryKinematic ) {
 				ent->GetPhysics()->PutToRest();
+			}
+		}
+	}
+
+	if ( interaction == IK_MOVER ) {
+		CBinaryFrobMover *mover = static_cast<CBinaryFrobMover *>( held.GetEntity() );
+		if ( mover == nullptr || mover->IsHidden() || idVRMovers::IsBusy( mover ) ) {
+			// gone, or an AI / script moves it now
+			HandsDebug( "hand %d: %s taken away", index, mover ? mover->name.c_str() : "mover" );
+			Release( player, false );
+		} else {
+			idVRMovers &movers = player->vrHands.GetMovers();
+			movers.Hold( mover, movers.FindFraction( mover, grip.anchor, GetGripTarget() ), latchHeld );
+			// pulled too far from it (blocked, or latched shut): the hand slips off
+			idVec3 point;
+			idMat3 a;
+			GetGripWorld( point, a );
+			if ( ( point - GetGripTarget() ).LengthSqr() > Square( vr_gripBreakDistance.GetFloat() ) ) {
+				slipTime += idMath::FtoiRound( dt * 1000 );
+				if ( slipTime > vr_gripBreakTime.GetInteger() ) {
+					HandsDebug( "hand %d slips off %s", index, mover->name.c_str() );
+					Release( player, false );
+				}
+			} else {
+				slipTime = 0;
 			}
 		}
 	}
@@ -997,6 +1124,7 @@ void idVRHands::Init() {
 	hands[1].Init( 1 );
 	highlighted.Clear();
 	clipRestores.Clear();
+	movers.Clear();
 	lastTime = 0;
 	lastDt = 0.0f;
 	initialized = true;
@@ -1342,6 +1470,8 @@ void idVRHands::Update( idPlayer *player ) {
 		}
 		hands[h].Update( player, in, dt );
 	}
+	// doors, lids and drawers: after the hands said where they want them
+	movers.Update( dt );
 
 	tools.Update( player, dt );
 	pouch.UpdatePendingGrabberItem( player, hands[0] );

@@ -30,14 +30,15 @@ idCVar vr_pouchSize( "vr_pouchSize", "6", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE,
 namespace {
 	const char *POUCH_GUI = "guis/vr_pouch.gui";
 
-	// a flat quad for the GUI: x = facing the viewer, y = viewer's left, z = up; texture (0,0) = top left
+	// a flat quad for the GUI: x = towards the viewer, y = viewer's right, z = up; texture (0,0) = top left
+	// (seen from the viewer the corners go top left, top right, bottom right, bottom left: clockwise = front)
 	idRenderModel *pouchModel = nullptr;
 	idRenderModel *GetPouchModel() {
 		if ( pouchModel != nullptr ) {
 			return pouchModel;
 		}
 		const float hw = 0.5f, hh = 0.375f;		// 4:3, scaled by the render entity axis
-		const idVec3 corners[4] = { idVec3( 0, hw, hh ), idVec3( 0, -hw, hh ), idVec3( 0, -hw, -hh ), idVec3( 0, hw, -hh ) };
+		const idVec3 corners[4] = { idVec3( 0, -hw, hh ), idVec3( 0, hw, hh ), idVec3( 0, hw, -hh ), idVec3( 0, -hw, -hh ) };
 		const float st[4][2] = { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 1 } };
 		idRenderModel *model = renderModelManager->AllocModel();
 		model->InitEmpty( "_vr_pouch_panel" );
@@ -55,7 +56,7 @@ namespace {
 			dv.xyz = corners[i];
 			dv.st.Set( st[i][0], st[i][1] );
 			dv.normal.Set( 1, 0, 0 );
-			dv.tangents[0].Set( 0, -1, 0 );
+			dv.tangents[0].Set( 0, 1, 0 );
 			dv.tangents[1].Set( 0, 0, -1 );
 			dv.color[0] = dv.color[1] = dv.color[2] = dv.color[3] = 255;
 			tri->bounds.AddPoint( corners[i] );
@@ -265,14 +266,15 @@ void idVRPouch::UpdatePanel( idPlayer *player, const idVRHand &leftHand ) {
 	if ( up.Normalize() < 0.01f ) {
 		up.Set( 1, 0, 0 );
 	}
-	const idVec3 left = up.Cross( toEye );
+	// the viewer looks along -toEye, so up x toEye points to the viewer's right (keeps the axis right-handed)
+	const idVec3 right = up.Cross( toEye );
 	const float size = vr_pouchSize.GetFloat();
 
 	memset( &panelEntity, 0, sizeof( panelEntity ) );
 	idRenderModel *model = GetPouchModel();
 	panelEntity.hModel = model;
 	panelEntity.origin = pos;
-	panelEntity.axis = idMat3( toEye * size, left * size, up * size );
+	panelEntity.axis = idMat3( toEye * size, right * size, up * size );
 	panelEntity.bounds = model->Bounds();
 	panelEntity.noShadow = true;
 	panelEntity.noSelfShadow = true;

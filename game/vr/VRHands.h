@@ -18,6 +18,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "VRTools.h"
 #include "VRPouch.h"
 #include "VRLocks.h"
+#include "VRMovers.h"
 
 /*
  * VR hands: the player's only way to touch the world.
@@ -31,7 +32,9 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
  *    Real mass and inertia decide how the object follows: light things sit in the hand, heavy things lag,
  *    tip and sag, and two hands pull at their own grip points. Letting go keeps the object's motion (throws).
  *  - inventory items (loot, keys, readables, ...) go into the inventory only when released at the stomach
- *  - anything else that can be frobbed (doors, levers, buttons, ...) gets its normal frob action for now
+ *  - doors, chests, drawers, windows are held at their handle / latch / anywhere and moved along their path
+ *    by the hand (see VRMovers.h); the trigger presses the handle down to open the latch
+ *  - anything else that can be frobbed (levers, buttons, ...) gets its normal frob action for now
  * The trigger "uses" the held object.
  *
  * The drawn hand pose is kept separate from the controller pose and every grip records where and how the
@@ -61,6 +64,7 @@ public:
 		IK_HOLD,		// physically held (moveables, bodies, moveable inventory items)
 		IK_CARRY,		// kinematically carried (static inventory items)
 		IK_FROB,		// generic frob action while grip is squeezed
+		IK_MOVER,		// a door, lid, drawer... held at a point and moved along its path
 	};
 
 	// how the hand grips the held body, in the body's own space (for holding now, and finger posing later)
@@ -137,6 +141,9 @@ private:
 	bool			carryFromPouch = false;		// a carried item that came out of the pouch goes back into it when let go
 	bool			carryKinematic = false;		// a weightless physics object (tool, key) that follows the hand exactly
 	idVRLockUse		lockUse;					// a key or lockpick being used on a lock (trigger held)
+	idEntityPtr<idEntity> moverPart;			// IK_MOVER: the part the hand holds (the handle, or the mover itself)
+	bool			latchHeld = false;			// IK_MOVER: trigger holds the handle down, the latch is open
+	void			PressHandle( bool down );
 
 	void			UpdateFingers( float dt );
 
@@ -167,6 +174,8 @@ public:
 	bool			IsInteractingWith( const idEntity *ent ) const;
 	// number of hands currently holding/carrying/frobbing this entity
 	int				CountHolding( const idEntity *ent ) const;
+	// doors, lids, drawers moved by hand
+	idVRMovers &	GetMovers() { return movers; }
 
 	// held objects don't collide with the player; after release they become solid again once they stop overlapping
 	void			MakeNonSolidToPlayer( idEntity *ent );
@@ -183,6 +192,7 @@ private:
 	idVRHand		hands[2];
 	idVRTools		tools;
 	idVRPouch		pouch;
+	idVRMovers		movers;
 	int				calibrateAt = 0;
 	idStr			calibrateMode;
 	idList< idEntityPtr<idEntity> > highlighted;

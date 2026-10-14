@@ -27,6 +27,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "BinaryFrobMover.h"
 #include "SndProp.h"
 #include "StimResponse/StimResponse.h"
+#include "vr/VRMovers.h"
 
 //===============================================================================
 // CBinaryFrobMover
@@ -85,6 +86,8 @@ CBinaryFrobMover::CBinaryFrobMover()
 	m_LastBlockingEnt = NULL;
 	m_bIntentOpen = false;
 	m_StateChange = false;
+	m_vrCloseSound = 1;
+	m_vrSoundBoost = 0.0f;
 	m_Rotating = false;
 	m_Translating = false;
 	m_StartPos = vec3_zero;
@@ -1059,6 +1062,13 @@ void CBinaryFrobMover::OnTeamBlocked(idEntity* blockedEntity, idEntity* blocking
 
 void CBinaryFrobMover::ApplyImpulse(idEntity *ent, int id, const idVec3 &point, const idVec3 &impulse)
 {
+	// VR: open movers are pushed physically by what hits them; latched ones don't move
+	if (idVRMovers::OnImpulse(this, point, impulse))
+	{
+		idEntity::ApplyImpulse( ent, id, point, impulse);
+		return;
+	}
+
 	idVec3 SwitchDir;
 	float SwitchThreshSq(0), ImpulseMagSq(0);
 
@@ -1388,7 +1398,11 @@ void CBinaryFrobMover::OnOpenPositionReached()
 void CBinaryFrobMover::OnClosedPositionReached()
 {
 	// play the closing sound when the door closes completely
-	FrobMoverStartSound("snd_close");
+	// (VR: not when the latch was held down while closing it)
+	if (m_vrCloseSound != 0)
+	{
+		FrobMoverStartSound("snd_close");
+	}
 
 	// trigger our targets on completely closing, if set to do so
 	if (spawnArgs.GetBool("trigger_on_close", "0"))
@@ -1447,7 +1461,8 @@ bool CBinaryFrobMover::OnUnlock(bool bMaster)
 		that to cause the open to begin. Since the door is already moving,
 		this causes the door to stop moving, and think it's been interruped.
 	*/
-	if (cv_door_auto_open_on_unlock.GetBool() && bMaster)
+	// VR: unlocked doors never swing open by themselves, the hand opens them
+	if (cv_door_auto_open_on_unlock.GetBool() && bMaster && !idVRMovers::HandsActive())
 	{
 		// The configuration says: open the mover when it's unlocked, but let's check the mapper's settings
 		bool openOnUnlock = true;
@@ -1468,9 +1483,152 @@ int CBinaryFrobMover::FrobMoverStartSound(const char* soundName)
 {
 	// Default implementation: Just play the sound on this entity.
 	int length = 0;
+	// VR: a slammed door is louder
+	const idSoundShader* boosted = (m_vrSoundBoost != 0.0f) ? declManager->FindSound(spawnArgs.GetString(soundName, ""), false) : NULL;
+	if (boosted != NULL)
+	{
+		SetSoundVolume(boosted->GetParms()->volume + m_vrSoundBoost);
+	}
 	StartSound(soundName, SND_CHANNEL_ANY, 0, false, &length);
+	if (boosted != NULL)
+	{
+		SetSoundVolume();
+	}
 
 	return length;
+}
+
+/*
+===============================================================================
+	VR: hand-driven movement. The mover follows a single parameter along the path it normally opens on
+	(0 = closed, 1 = open). Each tick it is told where to be next; the move goes through the normal mover
+	physics, so whatever is in the way blocks it or gets pushed exactly like with a normal opening move.
+===============================================================================
+*/
+
+float CBinaryFrobMover::VR_GetFraction()
+{
+	const idAngles delta = (m_OpenAngles - m_ClosedAngles).Normalize180();
+	const float maxAngle = idMath::Fabs(delta.ToRotation().GetAngle());
+	if (maxAngle > 0.01f)
+	{
+		const idAngles cur = (physicsObj.GetLocalAngles() - m_ClosedAngles).Normalize180();
+		return idMath::ClampFloat(0.0f, 1.0f, idMath::Fabs(cur.ToRotation().GetAngle()) / maxAngle);
+	}
+	const idVec3 move = m_OpenOrigin - m_ClosedOrigin;
+	const float lenSq = move.LengthSqr();
+	if (lenSq > 0.0001f)
+	{
+		return idMath::ClampFloat(0.0f, 1.0f, ((physicsObj.GetLocalOrigin() - m_ClosedOrigin) * move) / lenSq);
+	}
+	return 0.0f;
+}
+
+float CBinaryFrobMover::VR_PathAngle() const
+{
+	const float angle = idMath::Fabs((m_OpenAngles - m_ClosedAngles).Normalize180().ToRotation().GetAngle());
+	return angle > 0.01f ? angle : 0.0f;
+}
+
+void CBinaryFrobMover::VR_GetLocalPose(float fraction, idVec3 &origin, idAngles &angles) const
+{
+	origin = m_ClosedOrigin + (m_OpenOrigin - m_ClosedOrigin) * fraction;
+	angles = m_ClosedAngles + (m_OpenAngles - m_ClosedAngles).Normalize180() * fraction;
+}
+
+void CBinaryFrobMover::VR_GetWorldPose(float fraction, idVec3 &origin, idMat3 &axis)
+{
+	idVec3 localOrigin;
+	idAngles localAngles;
+	VR_GetLocalPose(fraction, localOrigin, localAngles);
+	axis = localAngles.ToMat3();
+	origin = localOrigin;
+	idVec3 masterOrigin;
+	idMat3 masterAxis;
+	if (GetBindMaster() != NULL && GetMasterPosition(masterOrigin, masterAxis))
+	{
+		origin = masterOrigin + localOrigin * masterAxis;
+		axis = axis * masterAxis;
+	}
+}
+
+void CBinaryFrobMover::VR_MoveTo(float fraction, int msec)
+{
+	idVec3 targetOrigin;
+	idAngles targetAngles;
+	VR_GetLocalPose(idMath::ClampFloat(0.0f, 1.0f, fraction), targetOrigin, targetAngles);
+
+	const idVec3 curOrigin = physicsObj.GetLocalOrigin();
+	const idAngles curAngles = physicsObj.GetLocalAngles();
+	const idVec3 moveDelta = targetOrigin - curOrigin;
+	const idAngles angleDelta = (targetAngles - curAngles).Normalize180();
+	if (moveDelta.LengthSqr() < Square(0.001f) && angleDelta.Compare(ang_zero, 0.001f))
+	{
+		return;
+	}
+	msec = Max(1, msec);
+	const float perSec = 1000.0f / msec;
+	// the move takes msec and then stops; it is started one step back, so that it is complete the next
+	// time the physics runs, whether this mover thinks before or after the player
+	const int startTime = gameLocal.time - msec;
+	physicsObj.SetLinearExtrapolation(EXTRAPOLATION_LINEAR, startTime, msec, curOrigin, moveDelta * perSec, vec3_origin);
+	physicsObj.SetAngularExtrapolation(EXTRAPOLATION_LINEAR, startTime, msec, curAngles, angleDelta * perSec, ang_zero);
+
+	if (IsType(CFrobDoor::Type))
+	{
+		static_cast<CFrobDoor*>(this)->UpdateSoundLoss();
+	}
+}
+
+void CBinaryFrobMover::VR_LeaveClosed()
+{
+	if (m_Open)
+	{
+		return;
+	}
+	m_StateChange = false;
+	m_bInterrupted = false;
+	m_StoppedDueToBlock = false;
+	m_Open = true;
+	m_bIntentOpen = false;
+	OnMoveStart(true);
+	// not the master: a double door's other wing stays where it is
+	OnStartOpen(true, false);
+}
+
+void CBinaryFrobMover::VR_ReachClosed(int closeSound, float slamBoost)
+{
+	if (!m_Open)
+	{
+		return;
+	}
+	m_Open = false;
+	m_bIntentOpen = true;
+	m_bInterrupted = false;
+	m_StateChange = false;
+
+	m_vrCloseSound = closeSound;
+	m_vrSoundBoost = (closeSound == 2) ? Min(slamBoost, 8.0f) : 0.0f;
+	OnClosedPositionReached();
+	m_vrCloseSound = 1;
+	m_vrSoundBoost = 0.0f;
+
+	if (closeSound == 2)
+	{
+		// a slam is heard much further than a door clicking shut
+		PropSoundS(NULL, "bounce_medium_hard_on_hard", slamBoost, 0);
+	}
+	CallStateScript();
+}
+
+void CBinaryFrobMover::VR_ReachOpen()
+{
+	if (!m_Open)
+	{
+		return;
+	}
+	OnOpenPositionReached();
+	CallStateScript();
 }
 
 void CBinaryFrobMover::Event_Open()

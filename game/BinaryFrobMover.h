@@ -291,6 +291,26 @@ public:
 	//stgatilov #5683: update members after moving this via hot-reload
 	void SetMapOriginAxis(const idVec3 *newOrigin, const idMat3 *newAxis);
 
+	// ===================== VR: moved by the player's hands (see game/vr/VRMovers.h) =====================
+	// position along the opening path: 0 = closed, 1 = fully open
+	float			VR_GetFraction();
+	// pose at a point of the path, relative to the bind master (like the physics' local pose)
+	void			VR_GetLocalPose( float fraction, idVec3 &origin, idAngles &angles ) const;
+	// pose at a point of the path in the world
+	void			VR_GetWorldPose( float fraction, idVec3 &origin, idMat3 &axis );
+	// move to a point of the path over the next msec; things in the way block it like any move of this mover
+	void			VR_MoveTo( float fraction, int msec );
+	// the latch let go and the mover leaves its closed position: opens the portal, plays the open sound
+	void			VR_LeaveClosed();
+	// the mover came back to its closed position and latches. closeSound: 0 = silent (latch held down
+	// while closing), 1 = normal, 2 = slammed (louder by slamBoost dB, and heard further by the AI)
+	void			VR_ReachClosed( int closeSound, float slamBoost );
+	// the mover reached its fully open position
+	void			VR_ReachOpen();
+	bool			VR_HasPortal() const { return areaPortal != 0; }
+	// how far it turns from closed to open (degrees, 0 for sliding movers)
+	float			VR_PathAngle() const;
+
 protected:
 
 	// ===================== Overridable events ================
@@ -456,6 +476,10 @@ protected:
 	bool						m_bIntentOpen;
 
 	bool						m_StateChange;
+
+	// VR: how the next close sound is played (see VR_ReachClosed); not saved, only set while closing
+	int							m_vrCloseSound;
+	float						m_vrSoundBoost;
 
 	/**
 	* Determines whether the door may be interrupted.  Read from spawnargs.

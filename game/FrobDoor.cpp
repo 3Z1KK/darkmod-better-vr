@@ -1461,7 +1461,16 @@ int CFrobDoor::FrobMoverStartSound(const char* soundName)
 			const idSoundShader* shader = declManager->FindSound(sound);
 
 			int length = 0;
+			// VR: a slammed door is louder
+			if (m_vrSoundBoost != 0.0f && shader != NULL)
+			{
+				handle->SetSoundVolume(shader->GetParms()->volume + m_vrSoundBoost);
+			}
 			handle->StartSoundShader(shader, SND_CHANNEL_ANY, 0, false, &length);
+			if (m_vrSoundBoost != 0.0f && shader != NULL)
+			{
+				handle->SetSoundVolume();
+			}
 
 			//gameRenderWorld->DebugArrow(colorWhite, handle->GetPhysics()->GetOrigin(), gameLocal.GetLocalPlayer()->GetEyePosition(), 1, 5000);
 
