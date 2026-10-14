@@ -22,6 +22,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "game/Item.h"
 #include "game/ai/AI.h"
 #include "game/Grabber.h"
+#include "renderer/vr/OpenXRBackend.h"
 
 idCVar vr_handsEnable( "vr_handsEnable", "1", CVAR_GAME | CVAR_BOOL, "VR: interact with the world through tracked hands" );
 idCVar vr_handTouchRadius( "vr_handTouchRadius", "2.5", CVAR_GAME | CVAR_FLOAT, "VR: radius (game units) around the palm that counts as touching" );
@@ -483,7 +484,7 @@ void idVRHand::Update( idPlayer *player, const idVec3 &worldPos, const idMat3 &w
 			GetHoldTarget( o, a );
 			const float dist = ( ent->GetPhysics()->GetOrigin( heldBodyId ) - o ).Length();
 			if ( dist > vr_gripBreakDistance.GetFloat() ) {
-				farFromHandTime += idMath::Ftoi( dt * 1000 );
+				farFromHandTime += idMath::FtoiRound( dt * 1000 );
 				if ( farFromHandTime > vr_gripBreakTime.GetInteger() ) {
 					HandsDebug( "hand %d loses grip on %s", index, ent->name.c_str() );
 					Release( player, false );
