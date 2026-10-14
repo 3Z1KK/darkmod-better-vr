@@ -1442,7 +1442,9 @@ float VR_EffectiveMass( idEntity *ent, int bodyId ) {
 }
 
 /*
- * How much material an object is made of (cubic units), from its visible model, computed once per model:
+ * How much material an object is made of (cubic units), from its visible model. Measured in the game the first
+ * time a hand deals with an object of that model (so mappers' own models are measured too), then remembered;
+ * models over vr_handWeightMaxTris triangles keep the box (no stutter on a very detailed model):
  *  - a closed mesh (a rock, a sack, a bucket modelled with thick walls): the volume it encloses
  *  - an open, single-skin mesh (most buckets, pots, bowls, chairs made of planks): its surface area times
  *    a wall thickness (vr_handWallThickness)
@@ -1450,6 +1452,7 @@ float VR_EffectiveMass( idEntity *ent, int bodyId ) {
  */
 idCVar vr_handWallThickness( "vr_handWallThickness", "0.5", CVAR_GAME | CVAR_FLOAT, "VR: wall thickness (units, 1 unit = 2.3 cm) assumed for open, single-skin models (buckets, bowls) when estimating their weight" );
 idCVar vr_handWeightFromModel( "vr_handWeightFromModel", "1", CVAR_GAME | CVAR_BOOL, "VR: weight from the model's material (ignores the air in buckets, chairs...). 0 = from the bounding box" );
+idCVar vr_handWeightMaxTris( "vr_handWeightMaxTris", "40000", CVAR_GAME | CVAR_INTEGER, "VR: models with more triangles than this are weighed by their box (measuring them would take too long)" );
 
 float VR_MaterialVolume( idEntity *ent, float boxVolume ) {
 	if ( !vr_handWeightFromModel.GetBool() || boxVolume <= 0.0f ) {
@@ -1467,9 +1470,23 @@ float VR_MaterialVolume( idEntity *ent, float boxVolume ) {
 	auto it = cache.find( key );
 	if ( it == cache.end() ) {
 		cached_t c = { 0.0f, 0.0f, false };
+		int numTris = 0;
+		for ( int s = 0; s < model->NumSurfaces(); s++ ) {
+			const modelSurface_t *surf = model->Surface( s );
+			if ( surf != nullptr && surf->geometry != nullptr ) {
+				numTris += surf->geometry->numIndexes / 3;
+			}
+		}
+		if ( numTris > vr_handWeightMaxTris.GetInteger() ) {
+			// too detailed to measure quickly: the box it is
+			cache.emplace( key, c );
+			return boxVolume;
+		}
 		// edges between welded positions: a closed mesh has every edge shared by exactly two triangles
 		std::unordered_map<uint64_t, int> edges;
 		std::unordered_map<uint64_t, int> weld;
+		edges.reserve( numTris * 2 );
+		weld.reserve( numTris );
 		auto posId = [&]( const idVec3 &v ) -> int {
 			const int64_t x = (int64_t)idMath::Floor( v.x * 50.0f + 0.5f );
 			const int64_t y = (int64_t)idMath::Floor( v.y * 50.0f + 0.5f );
