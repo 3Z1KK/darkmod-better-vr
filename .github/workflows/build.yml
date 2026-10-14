@@ -2,7 +2,11 @@ name: Build Windows
 
 on:
   push:
+    branches-ignore: [ 'ci-output-*' ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -17,41 +21,63 @@ jobs:
           path: ThirdParty/artefacts
           key: artefacts-release214-v1
 
-      - name: Download third-party libraries from TDM SVN
-        if: steps.cache-artefacts.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          choco install svn -y --no-progress
-          $svn = Get-ChildItem -Recurse -Filter svn.exe "C:\Program Files\SlikSvn","C:\ProgramData\chocolatey\bin" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $svn) { $svn = Get-Command svn }
-          & $svn.FullName export --force --non-interactive https://svn.thedarkmod.com/publicsvn/darkmod_src/branches/release214/ThirdParty/artefacts ThirdParty/artefacts
-          if (-not (Test-Path ThirdParty/artefacts/windows_64)) { Get-ChildItem ThirdParty/artefacts; throw "artefacts missing windows_64" }
-
-      - name: Add VR third-party libraries
-        shell: pwsh
-        run: |
-          if (Test-Path vr_thirdparty) {
-            Copy-Item -Recurse -Force vr_thirdparty/* ThirdParty/artefacts/
-          }
-
       - uses: microsoft/setup-msbuild@v2
 
-      - name: Build Release x64
-        run: msbuild TheDarkMod.sln -m -p:Configuration=Release -p:Platform=x64 -v:minimal
+      # All work happens in one script so the full log can be published to a branch
+      # (the log/artifact blob storage isn't reachable from the dev environment).
+      - name: Build
+        id: build
+        shell: pwsh
+        env:
+          CACHE_HIT: ${{ steps.cache-artefacts.outputs.cache-hit }}
+        run: |
+          New-Item -ItemType Directory -Force ci-out | Out-Null
+          $log = "ci-out/build-log.txt"
+          $ErrorActionPreference = "Continue"
+          $ok = $true
+          function Run($title, [scriptblock]$block) {
+            "===== $title =====" | Tee-Object -Append $log
+            & $block 2>&1 | Tee-Object -Append $log
+            if ($LASTEXITCODE -ne 0) { "!!!!! FAILED: $title (exit $LASTEXITCODE)" | Tee-Object -Append $log; $script:ok = $false }
+          }
 
-      - name: Collect build
+          if ($env:CACHE_HIT -ne 'true') {
+            Run "install svn" { choco install svn -y --no-progress }
+            $svn = (Get-ChildItem -Recurse -Filter svn.exe "C:\Program Files\SlikSvn","C:\ProgramData\chocolatey" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+            if (-not $svn) { $svn = "svn" }
+            "svn = $svn" | Tee-Object -Append $log
+            Run "svn export artefacts" { & $svn export --force --non-interactive --trust-server-cert-failures=unknown-ca,cn-mismatch,expired,not-yet-valid,other https://svn.thedarkmod.com/publicsvn/darkmod_src/branches/release214/ThirdParty/artefacts ThirdParty/artefacts }
+          }
+          Get-ChildItem ThirdParty/artefacts -ErrorAction SilentlyContinue | Out-String | Tee-Object -Append $log
+
+          if (Test-Path vr_thirdparty) { Copy-Item -Recurse -Force vr_thirdparty/* ThirdParty/artefacts/ }
+
+          if ($ok) {
+            Run "msbuild Release x64" { msbuild TheDarkMod.sln -m -p:Configuration=Release -p:Platform=x64 -v:minimal -clp:ErrorsOnly -flp:"LogFile=ci-out/msbuild-errors.txt;ErrorsOnly" }
+          }
+
+          New-Item -ItemType Directory -Force ci-out/dist | Out-Null
+          if ($ok) {
+            Copy-Item ..\darkmod\*.exe ci-out/dist -ErrorAction SilentlyContinue
+            Copy-Item ..\darkmod\*.dll ci-out/dist -ErrorAction SilentlyContinue
+            if (Test-Path ..\darkmod\glprogs) { Copy-Item -Recurse ..\darkmod\glprogs ci-out/dist/glprogs }
+            if (Test-Path vr_assets) { Copy-Item -Recurse vr_assets/* ci-out/dist }
+          }
+          Get-ChildItem -Recurse ci-out/dist | Select-Object FullName, Length | Out-String | Tee-Object -Append $log
+          "RESULT: $(if ($ok) {'SUCCESS'} else {'FAILURE'})" | Tee-Object -Append $log
+          "ok=$ok" >> $env:GITHUB_OUTPUT
+          if (-not $ok) { exit 1 }
+
+      - name: Publish log and build to ci-output branch
+        if: always()
         shell: pwsh
         run: |
-          $out = "dist"
-          New-Item -ItemType Directory -Force $out | Out-Null
-          Copy-Item ..\darkmod\*.exe $out
-          Copy-Item ..\darkmod\*.dll $out -ErrorAction SilentlyContinue
-          Copy-Item ..\darkmod\*.pdb $out -ErrorAction SilentlyContinue
-          if (Test-Path ..\darkmod\glprogs) { Copy-Item -Recurse ..\darkmod\glprogs $out\glprogs }
-          if (Test-Path vr_assets) { Copy-Item -Recurse vr_assets\* $out }
-          Get-ChildItem -Recurse $out | Select-Object FullName, Length
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: darkmod-vr-build
-          path: dist
+          $branch = "ci-output-${{ github.ref_name }}"
+          Set-Location ci-out
+          "commit: ${{ github.sha }}" | Out-File -Encoding utf8 source-commit.txt
+          git init -q -b $branch
+          git config user.name "ci"
+          git config user.email "ci@users.noreply.github.com"
+          git add -A
+          git commit -q -m "CI output for ${{ github.sha }}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" "${branch}:${branch}"
