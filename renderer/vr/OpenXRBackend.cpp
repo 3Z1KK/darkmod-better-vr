@@ -74,10 +74,11 @@ namespace {
 namespace {
 	// draws a full screen quad outside of any view. RB_DrawFullScreenQuad expects a valid backEnd.viewDef
 	// (for perf counters), which is not set (or stale) when we draw our own overlays, so provide a neutral one.
+	viewDef_t vrNeutralView;	// zero-initialized: not a lightgem, no entities, not mirrored
+
 	void VR_DrawFullScreenQuad() {
-		static viewDef_t neutralView;	// zero-initialized: not a lightgem, no entities
 		const viewDef_t *oldView = backEnd.viewDef;
-		backEnd.viewDef = &neutralView;
+		backEnd.viewDef = &vrNeutralView;
 		RB_DrawFullScreenQuad();
 		backEnd.viewDef = oldView;
 	}
@@ -187,6 +188,7 @@ void OpenXRBackend::RenderStereoView( const frameData_t *frameData ) {
 	aimIndicatorPos = frameData->mouseAimPosition;
 
 	// render stereo views
+	backEnd.viewDef = &vrNeutralView;
 	for ( int eye = 0; eye < 2; ++eye ) {
 		foveatedHelper.PrepareVariableRateShading( eye );
 		frameBuffers->defaultFbo = eyeBuffers[eye];
@@ -211,6 +213,7 @@ void OpenXRBackend::RenderStereoView( const frameData_t *frameData ) {
 	ExecuteRenderCommands( frameData, UI );
 
 	defaultFbo->Bind();
+	backEnd.viewDef = &vrNeutralView;
 	MirrorVrView( eyeTextures[0], uiTexture );
 	GLimp_SwapBuffers();
 
@@ -288,6 +291,8 @@ void OpenXRBackend::ExecuteRenderCommands( const frameData_t *frameData, eyeView
 		UpdateRenderViewsForEye( cmds, eyeView );
 	}
 
+	// never leave a pointer to a previous frame's (freed) view around while no view of this frame is active
+	backEnd.viewDef = &vrNeutralView;
 	RB_SetDefaultGLState();
 
 	const bool shouldRender3D = stereo || frameData->render2D;
