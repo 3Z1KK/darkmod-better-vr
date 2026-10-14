@@ -17,7 +17,7 @@
 #include <openxr/openxr.h>
 #include "OpenXRSwapchain.h"
 #include "renderer/tr_local.h"
-#include "GamepadInput.h"
+#include "framework/GamepadInput.h"
 #include "OpenXRInput.h"
 #include "VRFoveatedRendering.h"
 

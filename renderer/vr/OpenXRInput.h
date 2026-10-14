@@ -14,7 +14,7 @@
 ******************************************************************************/
 #pragma once
 #include <openxr/openxr.h>
-#include "GamepadInput.h"
+#include "framework/GamepadInput.h"
 
 extern idCVar vr_useMotionControllers;
 extern idCVar vr_inputSnapTurnInterval;
