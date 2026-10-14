@@ -14,6 +14,7 @@ from gltf import load
 from joints import build
 
 GAME_UNIT_CM = 2.309
+CUFF_CUT = -20.0   # cm along the hand axis: the cuff ends ~6 cm above the glove's opening
 GRIP_U, GRIP_V, GRIP_DEPTH = 0.5, float(os.environ.get('GRIP_V', '-1.5')), float(os.environ.get('GRIP_DEPTH', '2.0'))
 
 # joint hierarchy: name, parent
@@ -68,6 +69,60 @@ def main(low, high, frame, outdir):
     tsign = g['tan'][:, 3]
     uv = g['uv'].copy()
     tri = g['idx'].copy()
+
+    # --- the short forearm cuff: the bracer and its straps, cut a few centimetres above the wrist ---
+    cuff_parts = []
+    for p in parts:
+        if p['name'].startswith('Glove'):
+            continue
+        cl = ((p['pos'] - c) @ R.T) * 100
+        keep = (cl[p['idx']][:, :, 1] >= CUFF_CUT).all(1)
+        if keep.sum() == 0:
+            continue
+        idx = p['idx'][keep]
+        used = np.unique(idx)
+        remap = -np.ones(len(cl), dtype=np.int64); remap[used] = np.arange(len(used))
+        cuff_parts.append(dict(name=p['name'], loc=cl[used], uv=p['uv'][used], idx=remap[idx]))
+    cuff_loc = np.vstack([q['loc'] for q in cuff_parts])
+    cuff_uv = np.vstack([q['uv'] for q in cuff_parts])
+    cuff_tri = []
+    off = 0
+    for q in cuff_parts:
+        cuff_tri.append(q['idx'] + off); off += len(q['loc'])
+    cuff_tri = np.vstack(cuff_tri)
+    print('cuff parts', [q['name'] for q in cuff_parts], 'tris', len(cuff_tri))
+    # close the cut end of the bracer: fan-fill boundary loops that lie on the cut
+    def boundary_loops(P, T):
+        key = np.round(P * 1000).astype(np.int64)
+        _, wi = np.unique(key, axis=0, return_inverse=True); wi = wi.ravel()
+        E = defaultdict(list)
+        for t in T:
+            for a_, b_ in ((t[0], t[1]), (t[1], t[2]), (t[2], t[0])):
+                E[(min(wi[a_], wi[b_]), max(wi[a_], wi[b_]))].append((a_, b_))
+        bnd = [v[0] for k_, v in E.items() if len(v) == 1]
+        rep = {}
+        nxt = {}
+        for a_, b_ in bnd:
+            rep[wi[a_]] = a_; rep[wi[b_]] = b_; nxt[wi[a_]] = wi[b_]
+        loops, seen = [], set()
+        for s0 in list(nxt.keys()):
+            if s0 in seen: continue
+            L = [s0]; seen.add(s0)
+            while nxt.get(L[-1]) is not None and nxt[L[-1]] not in seen:
+                L.append(nxt[L[-1]]); seen.add(L[-1])
+            if len(L) >= 3 and nxt.get(L[-1]) == s0:
+                loops.append(np.array([rep[w] for w in L]))
+        return loops
+    cuff_cap_pos, cuff_cap_tri = [], []
+    for L in boundary_loops(cuff_loc, cuff_tri):
+        Pl = cuff_loc[L]
+        if np.abs(Pl[:, 1] - CUFF_CUT).max() > 1.5 or len(L) < 8:
+            continue
+        base = sum(len(x) for x in cuff_cap_pos)
+        cuff_cap_pos.append(np.vstack([Pl, Pl.mean(0)[None]]))
+        k_ = len(L)
+        cuff_cap_tri += [[base + (i + 1) % k_, base + i, base + k_] for i in range(k_)]
+    print('cuff cut caps', len(cuff_cap_pos))
 
     J = build(loc)
     # extra joints
@@ -193,7 +248,7 @@ def main(low, high, frame, outdir):
                 A[1] = np.cross(A[2], A[0])
             jaxes[jn] = A
         lines = ['MD5Version 10', 'commandline "VR hands, built by tools/vr_hands/build_hands.py"', '',
-                 f'numJoints {len(JNAMES)}', 'numMeshes 2', '', 'joints {']
+                 f'numJoints {len(JNAMES)}', f'numMeshes {4 if cuff_cap_pos else 3}', '', 'joints {']
         for jn, par in JOINTS:
             p = jpos[jn]; q = quat_from_rows(jaxes[jn])
             assert np.allclose(mat_from_quat(q), jaxes[jn], atol=1e-4), jn
@@ -223,6 +278,10 @@ def main(low, high, frame, outdir):
         lines += mesh_block('vr/hands/glove', loc, uv, tri, W_glove)
         cap_uv = np.zeros((len(cap_pos), 2)) + 0.5
         lines += mesh_block('vr/hands/glove_inner', cap_pos, cap_uv, cap_tri_local, W_cap)
+        lines += mesh_block('vr/hands/glove', cuff_loc, cuff_uv, cuff_tri, [[('hand', 1.0)]] * len(cuff_loc))
+        if cuff_cap_pos:
+            cp = np.vstack(cuff_cap_pos)
+            lines += mesh_block('vr/hands/glove_inner', cp, np.zeros((len(cp), 2)) + 0.5, np.array(cuff_cap_tri), [[('hand', 1.0)]] * len(cp))
         path = os.path.join(outdir, f'models/vr/hands/glove_{side}.md5mesh')
         open(path, 'w').write('\n'.join(lines) + '\n')
         print('wrote', path)

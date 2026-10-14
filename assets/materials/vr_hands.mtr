@@ -95,3 +95,21 @@ vr/hands/glove_inner
 		blue	0.03
 	}
 }
+
+// VR pouch: the surface the pouch GUI is drawn on, and its background
+vr/pouch_screen
+{
+	discrete
+	noShadows
+	guiSurf	entity
+}
+
+guis/assets/vr/pouch_bg
+{
+	{
+		blend	blend
+		map		guis/assets/vr/pouch_bg
+		colored
+		clamp
+	}
+}

@@ -15,6 +15,8 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #pragma once
 
 #include "VRHandModel.h"
+#include "VRTools.h"
+#include "VRPouch.h"
 
 /*
  * VR hands: the player's only way to touch the world.
@@ -89,6 +91,9 @@ public:
 	const idVec3 &	GetVisualPos() const { return visualPos; }
 	const idMat3 &	GetVisualAxis() const { return visualAxis; }
 
+	// take an entity into this hand with a given grip (tools, items from the pouch)
+	void			HoldEntity( idPlayer *player, idEntity *ent, int bodyId, const idVec3 &anchor, const idMat3 &handAxisInBody, const idVec3 &controllerOffset );
+
 	// where the controller wants the grip point to be
 	idVec3			GetGripTarget() const;
 	// current world grip point and hand axis on the held body
@@ -128,6 +133,7 @@ private:
 	idVec3			carryHomeOrigin;	// where a carried static item came from
 	idMat3			carryHomeAxis;
 	int				slipTime = 0;
+	bool			carryFromPouch = false;		// a carried item that came out of the pouch goes back into it when let go
 
 	void			UpdateFingers( float dt );
 
@@ -147,6 +153,13 @@ public:
 	void			ReleaseAll( idPlayer *player );
 	bool			IsActive() const;
 
+	// before the player moves: the pouch reads the stick and holds the player still while it is open
+	void			FilterInput( idPlayer *player, usercmd_t &cmd );
+	// a hand squeezed its grip: the pouch or a holster may take it (true = handled)
+	bool			HandleGripPress( idPlayer *player, int handIndex );
+	// a hand lets go of a tool: true if the tool went back into its holster
+	bool			OnToolRelease( idPlayer *player, int handIndex, idEntity *ent );
+
 	// true if any hand currently touches or holds this entity
 	bool			IsInteractingWith( const idEntity *ent ) const;
 	// number of hands currently holding/carrying/frobbing this entity
@@ -159,11 +172,16 @@ public:
 private:
 	void			UpdateHighlights();
 	void			UpdateLightCrystal( idPlayer *player );
+	void			UpdateCalibration( idPlayer *player );
 	void			DriveHeldObjects( float dt );
 	void			UpdatePendingClipRestores( idPlayer *player );
 	bool			IsInStomachZone( const idVec3 &handLocal, const idVec3 &headLocal, const idMat3 &headLocalAxis ) const;
 
 	idVRHand		hands[2];
+	idVRTools		tools;
+	idVRPouch		pouch;
+	int				calibrateAt = 0;
+	idStr			calibrateMode;
 	idList< idEntityPtr<idEntity> > highlighted;
 	int				lastTime = 0;
 	float			lastDt = 0.0f;

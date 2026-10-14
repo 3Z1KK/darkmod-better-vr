@@ -7516,6 +7516,11 @@ void idPlayer::Think( void )
 	buttonMask &= usercmd.buttons;
 	usercmd.buttons &= ~buttonMask;
 
+	// VR: the pouch on the left hand uses the stick and holds the player still while it is open
+	if ( vrHands.IsActive() ) {
+		vrHands.FilterInput( this, usercmd );
+	}
+
 	// Daft Mugi #2758: Fix arms detach from body after main menu close
 	if ( gameLocal.mainMenuExited )
 	{

@@ -27,8 +27,8 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 idCVar vr_handsEnable( "vr_handsEnable", "1", CVAR_GAME | CVAR_BOOL, "VR: interact with the world through tracked hands" );
 idCVar vr_handTouchRadius( "vr_handTouchRadius", "2.5", CVAR_GAME | CVAR_FLOAT, "VR: radius (game units) around the palm that counts as touching" );
 idCVar vr_handCollision( "vr_handCollision", "1", CVAR_GAME | CVAR_BOOL, "VR: free hands are stopped by walls and solid objects" );
-idCVar vr_handLiftMass( "vr_handLiftMass", "12", CVAR_GAME | CVAR_FLOAT, "VR: the heaviest mass one hand can hold up against gravity" );
-idCVar vr_handMoveForce( "vr_handMoveForce", "4000", CVAR_GAME | CVAR_FLOAT, "VR: how hard a hand can push/pull a held object around (mass x units/s^2): light things follow exactly, heavy things lag" );
+idCVar vr_handLiftMass( "vr_handLiftMass", "6", CVAR_GAME | CVAR_FLOAT, "VR: the heaviest mass one hand can hold up against gravity" );
+idCVar vr_handMoveForce( "vr_handMoveForce", "2500", CVAR_GAME | CVAR_FLOAT, "VR: how hard a hand can push/pull a held object around (mass x units/s^2): light things follow exactly, heavy things lag" );
 idCVar vr_handWristAccel( "vr_handWristAccel", "1500", CVAR_GAME | CVAR_FLOAT, "VR: how fast the wrist can turn a held object (rad/s^2)" );
 idCVar vr_handWristMassFactor( "vr_handWristMassFactor", "0.01", CVAR_GAME | CVAR_FLOAT, "VR: how much weight slows turning: accel = vr_handWristAccel / (1 + weight x this)" );
 idCVar vr_handPushMass( "vr_handPushMass", "2", CVAR_GAME | CVAR_FLOAT, "VR: effective mass of a free hand bumping into loose objects" );
@@ -50,6 +50,7 @@ idCVar vr_stomachForward( "vr_stomachForward", "4", CVAR_GAME | CVAR_FLOAT, "VR:
 idCVar vr_stomachRadius( "vr_stomachRadius", "9", CVAR_GAME | CVAR_FLOAT, "VR: stomach inventory zone radius (units)" );
 idCVar vr_ringRadius( "vr_ringRadius", "0.8", CVAR_GAME | CVAR_FLOAT, "VR: radius of the light crystal ring on the left ring finger (game units)" );
 idCVar vr_ringOffset( "vr_ringOffset", "-0.1", CVAR_GAME | CVAR_FLOAT, "VR: ring centre offset from the finger joint towards the back of the finger (game units)" );
+idCVar vr_calibrateHands( "vr_calibrateHands", "", CVAR_GAME, "VR: calibrate the glove position: \"fist\" (bump your fists together), \"palms\" (palms together) or \"reset\"" );
 idCVar vr_handsDebug( "vr_handsDebug", "0", CVAR_GAME | CVAR_BOOL, "VR: print hand interaction events" );
 
 namespace {
@@ -584,9 +585,51 @@ void idVRHand::GetGripWorld( idVec3 &point, idMat3 &handAxis ) const {
 	handAxis = grip.handAxis * bodyAxis;
 }
 
+void idVRHand::HoldEntity( idPlayer *player, idEntity *ent, int bodyId, const idVec3 &anchor, const idMat3 &handAxisInBody, const idVec3 &controllerOffset ) {
+	if ( ent == nullptr ) {
+		return;
+	}
+	touched = nullptr;
+	held = ent;
+	heldBodyId = bodyId;
+	gripDown = true;
+	slipTime = 0;
+	carryFromPouch = false;
+	if ( CanHold( ent ) ) {
+		grip.anchor = anchor;
+		grip.handAxis = handAxisInBody;
+		grip.controllerOffset = controllerOffset;
+		grip.contactPoint = anchor;
+		grip.contactNormal.Zero();
+		interaction = IK_HOLD;
+		ent->GetPhysics()->SetLinearVelocity( input.vel, bodyId );
+		ent->GetPhysics()->Activate();
+	} else {
+		// not a physics object: carried directly, and back into the pouch when let go
+		const idMat3 ctrlAxisT = input.axis.Transpose();
+		carryHomeOrigin = ent->GetPhysics()->GetOrigin();
+		carryHomeAxis = ent->GetPhysics()->GetAxis();
+		carryRelOrigin = ( carryHomeOrigin - input.pos ) * ctrlAxisT;
+		carryRelAxis = carryHomeAxis * ctrlAxisT;
+		carryFromPouch = true;
+		interaction = IK_CARRY;
+	}
+	player->vrHands.MakeNonSolidToPlayer( ent );
+	HandsDebug( "hand %d takes %s", index, ent->name.c_str() );
+}
+
 void idVRHand::StartInteraction( idPlayer *player ) {
 	idEntity *ent = touched.GetEntity();
 	if ( ent == nullptr ) {
+		return;
+	}
+
+	if ( idVRTools::IsTool( ent ) && CanHold( ent ) ) {
+		// a dropped tool: back into its fixed grip
+		idVec3 anchor;
+		idMat3 handAxisInTool;
+		idVRTools::GetSnapGrip( ent, anchor, handAxisInTool );
+		HoldEntity( player, ent, 0, anchor, handAxisInTool, idVec3( 0, 0, 0 ) );
 		return;
 	}
 
@@ -655,6 +698,12 @@ void idVRHand::Release( idPlayer *player, bool allowInventory ) {
 		return;
 	}
 
+	// tools go back into their holster (or fall, see vr_toolsReturnToHolster)
+	if ( kind == IK_HOLD && player->vrHands.CountHolding( ent ) == 0 && player->vrHands.OnToolRelease( player, index, ent ) ) {
+		player->vrHands.ReleaseNonSolidToPlayer( ent, true );
+		return;
+	}
+
 	// is the other hand still holding it? (this hand already let go)
 	const bool otherHolds = player->vrHands.CountHolding( ent ) > 0;
 
@@ -671,6 +720,15 @@ void idVRHand::Release( idPlayer *player, bool allowInventory ) {
 		return;
 	}
 
+	if ( kind == IK_CARRY && !otherHolds && carryFromPouch ) {
+		// an item from the pouch that can't lie in the world on its own goes back into the pouch
+		carryFromPouch = false;
+		player->vrHands.ReleaseNonSolidToPlayer( ent, true );
+		player->m_FrobEntity = ent;
+		player->PerformFrob( EPressed, ent, false );
+		player->m_FrobEntity = nullptr;
+		return;
+	}
 	if ( kind == IK_CARRY && !otherHolds ) {
 		// static items can't fall; they go back to where they were taken from
 		ent->SetOrigin( carryHomeOrigin );
@@ -820,7 +878,10 @@ void idVRHand::Update( idPlayer *player, const vrHandInput_t &in, float dt ) {
 	}
 
 	if ( gripDown && !wasGrip && interaction == IK_NONE ) {
-		StartInteraction( player );
+		// the pouch (left hand) and the holsters get the first chance, then whatever the hand touches
+		if ( !player->vrHands.HandleGripPress( player, index ) ) {
+			StartInteraction( player );
+		}
 	} else if ( !gripDown && wasGrip && interaction != IK_NONE ) {
 		Release( player, true );
 	}
@@ -895,6 +956,7 @@ void idVRHands::Shutdown() {
 	if ( !initialized ) {
 		return;
 	}
+	pouch.Free();
 	if ( crystalHandle != -1 && gameRenderWorld ) {
 		gameRenderWorld->FreeEntityDef( crystalHandle );
 	}
@@ -1059,6 +1121,9 @@ void idVRHands::UpdateHighlights() {
  * coins and bottles are light, chairs are a handful, big crates are heavy. Bodies are always heavy.
  */
 float VR_EffectiveMass( idEntity *ent, int bodyId ) {
+	if ( ent->spawnArgs.GetBool( "vr_weightless", "0" ) ) {
+		return 0.05f;
+	}
 	idPhysics *phys = ent->GetPhysics();
 	if ( phys->IsType( idPhysics_AF::Type ) ) {
 		const float total = Max( 0.01f, phys->GetMass( -1 ) );
@@ -1228,6 +1293,9 @@ void idVRHands::Update( idPlayer *player ) {
 		hands[h].Update( player, in, dt );
 	}
 
+	tools.Update( player, dt );
+	pouch.UpdatePendingGrabberItem( player, hands[0] );
+	UpdateCalibration( player );
 	DriveHeldObjects( dt );
 	UpdateHighlights();
 	UpdatePendingClipRestores( player );
@@ -1236,10 +1304,115 @@ void idVRHands::Update( idPlayer *player ) {
 	player->m_FrobEntity = nullptr;
 }
 
+void idVRHands::FilterInput( idPlayer *player, usercmd_t &cmd ) {
+	if ( !initialized || !IsActive() ) {
+		return;
+	}
+	pouch.UpdateInput( player, cmd, hands[0] );
+}
+
+bool idVRHands::HandleGripPress( idPlayer *player, int handIndex ) {
+	// the pouch belongs to the left hand: while it is open, the left grip takes the shown item
+	if ( handIndex == 0 && pouch.IsOpen() ) {
+		return pouch.Take( player, hands[0] );
+	}
+	// an empty hand that touches nothing may be at a holster
+	if ( hands[handIndex].GetTouched() == nullptr ) {
+		return tools.TryDraw( player, hands[handIndex], handIndex, hands[1 - handIndex] );
+	}
+	return false;
+}
+
+bool idVRHands::OnToolRelease( idPlayer *player, int handIndex, idEntity *ent ) {
+	return tools.OnRelease( player, ent, handIndex, hands[handIndex], hands[1 - handIndex] );
+}
+
+/*
+ * Hand calibration: vr_calibrateHands fist|palms|reset
+ * After a short countdown the gap between the two gloves is measured while the real hands touch
+ * (knuckles together for "fist", flat palms together for "palms") and the glove offset
+ * (vr_handModelOffset, same for both hands, mirrored) is corrected so the gloves touch too.
+ */
+void idVRHands::UpdateCalibration( idPlayer *player ) {
+	if ( vr_calibrateHands.IsModified() ) {
+		vr_calibrateHands.ClearModified();
+		calibrateMode = vr_calibrateHands.GetString();
+		calibrateMode.ToLower();
+		if ( calibrateMode == "reset" ) {
+			vr_handModelOffset.SetString( "0 0 0" );
+			player->SendHUDMessage( "Hand calibration reset" );
+			calibrateMode.Clear();
+		} else if ( calibrateMode == "fist" || calibrateMode == "palms" ) {
+			calibrateAt = gameLocal.time + 4000;
+			player->SendHUDMessage( calibrateMode == "fist" ? "Calibration: bump your fists together and hold still" : "Calibration: press your palms flat together and hold still" );
+		} else {
+			calibrateMode.Clear();
+		}
+		if ( vr_calibrateHands.GetString()[0] != '\0' ) {
+			vr_calibrateHands.SetString( "" );
+			vr_calibrateHands.ClearModified();
+		}
+	}
+	if ( calibrateMode.IsEmpty() || gameLocal.time < calibrateAt ) {
+		return;
+	}
+	const idStr mode = calibrateMode;
+	calibrateMode.Clear();
+	if ( !hands[0].IsTracked() || !hands[1].IsTracked() || !hands[0].GetGlove().IsValid() || !hands[1].GetGlove().IsValid() ) {
+		player->SendHUDMessage( "Calibration failed: both hands must be visible" );
+		return;
+	}
+	idList<idVRHandModel::touchPoint_t> pts[2];
+	for ( int h = 0; h < 2; h++ ) {
+		hands[h].GetGlove().GetTouchPoints( hands[h].GetVisualPos(), hands[h].GetVisualAxis(), pts[h] );
+	}
+	// the closest pair of finger points (fist) or the two palm points (palms)
+	const bool palms = mode == "palms";
+	idVec3 a, b;
+	float best = idMath::INFINITY;
+	for ( const idVRHandModel::touchPoint_t &p : pts[0] ) {
+		for ( const idVRHandModel::touchPoint_t &q : pts[1] ) {
+			if ( p.palm != palms || q.palm != palms ) {
+				continue;
+			}
+			const float d = ( p.pos - q.pos ).LengthFast();
+			if ( d < best ) {
+				best = d;
+				a = p.pos;
+				b = q.pos;
+			}
+		}
+	}
+	if ( best == idMath::INFINITY || best < 0.01f ) {
+		player->SendHUDMessage( "Calibration failed" );
+		return;
+	}
+	// surface distance from the measured points: finger half thickness / palm point to palm surface
+	const float surface = palms ? 0.26f : 0.72f;
+	const float gap = best - 2.0f * surface;
+	if ( gap < -4.0f || gap > 12.0f ) {
+		player->SendHUDMessage( va( "Calibration failed: hands %.0f cm apart, are they touching?", gap * 2.309f ) );
+		return;
+	}
+	const idVec3 dir = ( b - a ) / best;
+	// left glove moves towards the right one by half the gap, and the other way round; in grip space
+	idVec3 leftLocal = ( dir * ( gap * 0.5f ) ) * hands[0].GetInput().axis.Transpose();
+	idVec3 rightLocal = ( dir * ( -gap * 0.5f ) ) * hands[1].GetInput().axis.Transpose();
+	rightLocal.y = -rightLocal.y;		// the right glove is the mirror image
+	const idVec3 delta = ( leftLocal + rightLocal ) * 0.5f;
+	idVec3 offset( 0, 0, 0 );
+	sscanf( vr_handModelOffset.GetString(), "%f %f %f", &offset.x, &offset.y, &offset.z );
+	offset += delta;
+	vr_handModelOffset.SetString( va( "%.2f %.2f %.2f", offset.x, offset.y, offset.z ) );
+	player->SendHUDMessage( va( "Calibration done: gap was %.1f cm, glove offset now %s", gap * 2.309f, vr_handModelOffset.GetString() ) );
+	gameLocal.Printf( "VR hands calibration (%s): gap %.2f units, vr_handModelOffset \"%s\"\n", mode.c_str(), gap, vr_handModelOffset.GetString() );
+}
+
 void idVRHands::PostThink( idPlayer *player ) {
 	if ( !initialized ) {
 		return;
 	}
+	pouch.UpdatePanel( player, hands[0] );
 	hands[0].UpdateVisual( lastDt );
 	hands[1].UpdateVisual( lastDt );
 	UpdateLightCrystal( player );

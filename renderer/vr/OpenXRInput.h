@@ -38,6 +38,7 @@ struct poseInput_t {
 	bool headTracked;
 	bool headFloorValid;
 	float headFloorZ;
+	int buttons;		// VR_BUTTON_* (game side, see UsercmdGen.h)
 };
 
 class OpenXRInput {
@@ -71,6 +72,7 @@ public:
 		XR_HAND_POSE,
 		XR_HAND_GRIP,
 		XR_HAND_TRIGGER,
+		XR_POUCH,
 
 		XR_NUM_ACTIONS,
 		XR_INVALID = -1,

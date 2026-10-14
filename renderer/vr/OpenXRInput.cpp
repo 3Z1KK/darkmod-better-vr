@@ -57,6 +57,7 @@ namespace {
 		{ OpenXRInput::XR_HAND_POSE, "hand_pose", "Hand pose" },
 		{ OpenXRInput::XR_HAND_GRIP, "hand_grip", "Hand grip" },
 		{ OpenXRInput::XR_HAND_TRIGGER, "hand_trigger", "Hand trigger" },
+		{ OpenXRInput::XR_POUCH, "pouch", "Open the pouch (inventory) on the left hand" },
 	};
 
 	OpenXRInput::Action ActionByName( const idStr &name ) {
@@ -245,6 +246,7 @@ void OpenXRInput::CreateAllActions() {
 	CreateAction( ingameActionSet, XR_HAND_POSE, XR_ACTION_TYPE_POSE_INPUT, 2, handPaths );
 	CreateAction( ingameActionSet, XR_HAND_GRIP, XR_ACTION_TYPE_FLOAT_INPUT, 2, handPaths );
 	CreateAction( ingameActionSet, XR_HAND_TRIGGER, XR_ACTION_TYPE_FLOAT_INPUT, 2, handPaths );
+	CreateAction( ingameActionSet, XR_POUCH, XR_ACTION_TYPE_BOOLEAN_INPUT );
 
 	menuActionSet = CreateActionSet( "menu" );
 	CreateAction( menuActionSet, XR_MENU_AIM, XR_ACTION_TYPE_POSE_INPUT, 2, handPaths );
@@ -412,6 +414,7 @@ void OpenXRInput::UpdateInput( int axis[6], idList<padActionChange_t> &actionCha
 		poseInput.handGrip[h] = GetFloat( XR_HAND_GRIP, handPaths[h] ).second;
 		poseInput.handTrigger[h] = GetFloat( XR_HAND_TRIGGER, handPaths[h] ).second;
 	}
+	poseInput.buttons = GetBool( XR_POUCH ).second ? 1 : 0;
 
 	auto menuState = GetBool( XR_MENU_OPEN );
 	if ( menuState.first ) {

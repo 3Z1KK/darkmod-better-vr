@@ -54,6 +54,7 @@ public:
 	// world position and axis of a joint in the current pose
 	bool			GetJointWorld( int joint, idVec3 &pos, idMat3 &axis ) const;
 	int				GetRingSocket() const { return ringSocket; }
+	int				GetHandJoint() const { return handJoint; }
 
 	// spheres covering the palm and the (currently curled) fingers, for a hand at the given grip pose
 	void			GetTouchPoints( const idVec3 &gripOrigin, const idMat3 &gripAxis, idList<touchPoint_t> &out ) const;
@@ -78,3 +79,5 @@ private:
 	idVec3			modelOrigin = vec3_zero;
 	idMat3			modelAxis = mat3_identity;
 };
+
+extern idCVar vr_handModelOffset;

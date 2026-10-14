@@ -62,7 +62,7 @@ jobs:
             Copy-Item ..\darkmod\*.exe ci-out/dist -ErrorAction SilentlyContinue
             Copy-Item ..\darkmod\*.dll ci-out/dist -ErrorAction SilentlyContinue
             Copy-Item ..\darkmod\*.cfg ci-out/dist -ErrorAction SilentlyContinue
-            foreach ($d in @("glprogs", "glprogs_vr", "guis", "materials", "models", "textures")) {
+            foreach ($d in @("glprogs", "glprogs_vr", "guis", "materials", "models", "textures", "def", "sound")) {
               if (Test-Path ..\darkmod\$d) { Copy-Item -Recurse ..\darkmod\$d ci-out/dist/$d }
             }
           }
