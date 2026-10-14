@@ -203,6 +203,9 @@ const int IMPULSE_BUTTON_BASE	= 25;
 // usercmd_t->flags
 const int UCF_IMPULSE_SEQUENCE	= 0x0001;		// toggled every time an impulse command is sent
 
+// usercmd_t->vrHandFlags
+const int VR_HAND_TRACKED		= 0x0001;		// hand pose is valid
+
 class usercmd_t {
 public:
 	int			gameFrame;						// frame number
@@ -224,6 +227,16 @@ public:
 	idQuat		movementAxis;
 	idQuat		frobAxis;
 	idVec3		frobPos;
+
+	// VR: tracked poses in the headset's local space (game units and axes), anchored at the player's view origin
+	// index 0 = left hand, 1 = right hand
+	idVec3		vrHeadPos;
+	idQuat		vrHeadAxis;
+	idVec3		vrHandPos[2];
+	idQuat		vrHandAxis[2];
+	float		vrHandGrip[2];					// 0..1 grip squeeze
+	float		vrHandTrigger[2];				// 0..1 trigger pull
+	byte		vrHandFlags[2];					// VR_HAND_*
 
 public:
 	void		ByteSwap();						// on big endian systems, byte swap the shorts and ints

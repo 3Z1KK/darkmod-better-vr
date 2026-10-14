@@ -1,0 +1,22 @@
+// VR placeholder hands (procedural box mittens, see game/vr/VRHands.cpp)
+vr/hand_placeholder
+{
+	noShadows
+	noSelfShadow
+	twoSided
+	{
+		blend	diffusemap
+		map		_white
+		red		0.45
+		green	0.36
+		blue	0.30
+	}
+	// faint self illumination (shaderParm0-2) so the hands never vanish completely in the dark
+	{
+		blend	add
+		map		_white
+		red		Parm0
+		green	Parm1
+		blue	Parm2
+	}
+}

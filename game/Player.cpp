@@ -2088,6 +2088,7 @@ Release any resources used by the player.
 */
 idPlayer::~idPlayer()
 {
+	vrHands.Shutdown();
 	delete weapon.GetEntity();
 	weapon = NULL;
 }
@@ -7676,7 +7677,14 @@ void idPlayer::Think( void )
 	// this may use firstPersonView, or a thirdPerson / camera view
 	CalculateRenderView();
 
-	PerformFrobCheck();
+	if ( vrHands.IsActive() ) {
+		// VR: the hands touch and grab things, no view-ray frobbing
+		vrHands.Update( this );
+	} else {
+		vrHands.ReleaseAll( this );
+		vrHands.Shutdown();
+		PerformFrobCheck();
+	}
 
 	// greebo: Close any opened inventory maps when releasing the attack button (#2460)
 	if ( ( m_ActiveInventoryMapEnt.GetEntity() != NULL ) && (oldButtons & BUTTON_ATTACK) && !(usercmd.buttons & BUTTON_ATTACK) )

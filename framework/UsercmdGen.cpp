@@ -421,6 +421,7 @@ private:
 
 	poseInput_t		poseInput;
 	int				lastTurnDeflection;
+	uint64_t		lastSmoothTurnUsec = 0;
 
 	static idCVar	in_yawSpeed;
 	static idCVar	in_pitchSpeed;
@@ -754,6 +755,20 @@ void idUsercmdGenLocal::JoystickMove( void ) {
 			viewangles[YAW] += ( in_padInvertYawAxis.GetBool() ? 1 : -1 ) * turnDeflection * vr_inputSnapTurnInterval.GetInteger();
 			lastTurnDeflection = turnDeflection;
 		}		
+	} else if ( vr_useMotionControllers.GetBool() ) {
+		// VR smooth turning: real-time based so the speed doesn't depend on the frame rate
+		const uint64_t nowUsec = Sys_GetTimeMicroseconds();
+		float dt = lastSmoothTurnUsec ? ( nowUsec - lastSmoothTurnUsec ) * 1e-6f : 0.0f;
+		lastSmoothTurnUsec = nowUsec;
+		dt = idMath::ClampFloat( 0.0f, 0.1f, dt );
+		float deflection = joystickAxis[AXIS_YAW] / 127.f;
+		const float deadzone = 0.15f;
+		if ( idMath::Fabs( deflection ) < deadzone ) {
+			deflection = 0;
+		} else {
+			deflection = ( deflection - ( deflection > 0 ? deadzone : -deadzone ) ) / ( 1.0f - deadzone );
+		}
+		viewangles[YAW] += ( in_padInvertYawAxis.GetBool() ? 1 : -1 ) * deflection * vr_smoothTurnSpeed.GetFloat() * dt;
 	} else {
 		viewangles[YAW] += yawAngleSpeed * in_yawSpeed.GetFloat() * joystickAxis[AXIS_YAW] / 127.f;
 	}
@@ -857,6 +872,15 @@ void idUsercmdGenLocal::MakeCurrent( void ) {
 		cmd.movementAxis = poseInput.movementAxis;
 		cmd.frobAxis = poseInput.frobHandAxis;
 		cmd.frobPos = poseInput.frobHandPos;
+		cmd.vrHeadPos = poseInput.headPos;
+		cmd.vrHeadAxis = poseInput.headAxis;
+		for ( int h = 0; h < 2; h++ ) {
+			cmd.vrHandPos[h] = poseInput.handPos[h];
+			cmd.vrHandAxis[h] = poseInput.handAxis[h];
+			cmd.vrHandGrip[h] = poseInput.handGrip[h];
+			cmd.vrHandTrigger[h] = poseInput.handTrigger[h];
+			cmd.vrHandFlags[h] = poseInput.handTracked[h] ? VR_HAND_TRACKED : 0;
+		}
 
 		// check to make sure the angles haven't wrapped
 		if ( viewangles[PITCH] - oldAngles[PITCH] > 90 ) {
@@ -1136,6 +1160,15 @@ void idUsercmdGenLocal::Joystick( void ) {
 	poseInput.movementAxis = idQuat( 0, 0, 0, 1 );
 	poseInput.frobHandAxis = idQuat( 0, 0, 0, 1 );
 	poseInput.frobHandPos = idVec3( 0, 0, 0 );
+	poseInput.headPos.Zero();
+	poseInput.headAxis = idQuat( 0, 0, 0, 1 );
+	for ( int h = 0; h < 2; h++ ) {
+		poseInput.handPos[h].Zero();
+		poseInput.handAxis[h] = idQuat( 0, 0, 0, 1 );
+		poseInput.handGrip[h] = 0.0f;
+		poseInput.handTrigger[h] = 0.0f;
+		poseInput.handTracked[h] = false;
+	}
 	vrBackend->UpdateInput( joystickAxis, stateChanges, poseInput );
 	for ( auto change : stateChanges ) {
 		if ( change.active ) {

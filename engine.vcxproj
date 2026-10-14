@@ -408,6 +408,7 @@
     <ClInclude Include="game\gamesys\SysCvar.h" />
     <ClInclude Include="game\Game_local.h" />
     <ClInclude Include="game\Grabber.h" />
+    <ClInclude Include="game\vr\VRHands.h" />
     <ClInclude Include="game\HidingSpotSearchCollection.h" />
     <ClInclude Include="game\Http\HttpConnection.h" />
     <ClInclude Include="game\Http\HttpRequest.h" />
@@ -1069,6 +1070,7 @@
     <ClCompile Include="game\gamesys\SysCvar.cpp" />
     <ClCompile Include="game\Game_local.cpp" />
     <ClCompile Include="game\Grabber.cpp" />
+    <ClCompile Include="game\vr\VRHands.cpp" />
     <ClCompile Include="game\HidingSpotSearchCollection.cpp" />
     <ClCompile Include="game\Http\HttpConnection.cpp" />
     <ClCompile Include="game\Http\HttpRequest.cpp" />

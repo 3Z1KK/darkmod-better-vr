@@ -18,11 +18,21 @@
 
 extern idCVar vr_useMotionControllers;
 extern idCVar vr_inputSnapTurnInterval;
+extern idCVar vr_smoothTurnSpeed;
 
 struct poseInput_t {
 	idQuat movementAxis;
 	idVec3 frobHandPos;
 	idQuat frobHandAxis;
+
+	// VR hands (0 = left, 1 = right) and head, in game units/axes in the headset's local space
+	idVec3 headPos;
+	idQuat headAxis;
+	idVec3 handPos[2];
+	idQuat handAxis[2];
+	float handGrip[2];
+	float handTrigger[2];
+	bool handTracked[2];
 };
 
 class OpenXRInput {
@@ -53,6 +63,9 @@ public:
 		XR_MENU_AIM,
 		XR_MENU_CLICK,
 		XR_MENU_ESCAPE,
+		XR_HAND_POSE,
+		XR_HAND_GRIP,
+		XR_HAND_TRIGGER,
 
 		XR_NUM_ACTIONS,
 		XR_INVALID = -1,

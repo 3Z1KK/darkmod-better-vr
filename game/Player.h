@@ -18,6 +18,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "ButtonStateTracker.h"
 #include "Listener.h"
 #include "FrobHelper.h"
+#include "vr/VRHands.h"
 
 class CInventoryItem;
 typedef std::shared_ptr<CInventoryItem> CInventoryItemPtr;
@@ -260,6 +261,8 @@ public:
 	};
 
 	usercmd_t				usercmd;
+
+	idVRHands				vrHands;			// VR: the player's hands, the only way to touch the world in VR
 
 	class idPlayerView		playerView;			// handles damage kicks and effects
 

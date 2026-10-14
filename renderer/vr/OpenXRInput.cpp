@@ -24,7 +24,8 @@
 idCVar vr_useMotionControllers( "vr_useMotionControllers", "1", CVAR_GAME|CVAR_BOOL|CVAR_ARCHIVE, "If enabled, use motion controllers for game input (wip)" );
 idCVar vr_inputLefthanded( "vr_inputLefthanded", "0", CVAR_BOOL|CVAR_ARCHIVE|CVAR_GAME, "If enabled, assumes the dominant hand to be the left hand" );
 idCVar vr_inputWalkHeadRelative( "vr_inputWalkHeadRelative", "0", CVAR_GAME|CVAR_BOOL|CVAR_RENDERER, "If enabled, movement is relative to head orientation. Otherwise, it is relative to controller orientation." );
-idCVar vr_inputSnapTurnInterval( "vr_inputSnapTurnInterval", "45", CVAR_GAME|CVAR_INTEGER|CVAR_ARCHIVE, "Determines how many degrees the player is rotated per snap turn. Set to 0 to disable snap turning." );
+idCVar vr_inputSnapTurnInterval( "vr_snapTurnAngle", "0", CVAR_GAME|CVAR_INTEGER|CVAR_ARCHIVE, "Degrees per snap turn. 0 = smooth turning (default)" );
+idCVar vr_smoothTurnSpeed( "vr_smoothTurnSpeed", "120", CVAR_GAME|CVAR_FLOAT|CVAR_ARCHIVE, "Smooth turning speed in degrees per second at full stick deflection" );
 
 namespace {
 	struct actionName_t {
@@ -53,6 +54,9 @@ namespace {
 		{ OpenXRInput::XR_MENU_CLICK, "menu_click", "Menu pointer click" },
 		{ OpenXRInput::XR_MENU_ESCAPE, "menu_escape", "Menu escape" },
 		{ OpenXRInput::XR_AIM, "aim", "Frob aim controller pose" },
+		{ OpenXRInput::XR_HAND_POSE, "hand_pose", "Hand pose" },
+		{ OpenXRInput::XR_HAND_GRIP, "hand_grip", "Hand grip" },
+		{ OpenXRInput::XR_HAND_TRIGGER, "hand_trigger", "Hand trigger" },
 	};
 
 	OpenXRInput::Action ActionByName( const idStr &name ) {
@@ -221,6 +225,9 @@ void OpenXRInput::CreateAllActions() {
 	CreateAction( ingameActionSet, XR_AIM, XR_ACTION_TYPE_POSE_INPUT );
 	CreateAction( ingameActionSet, XR_USE_ITEM, XR_ACTION_TYPE_BOOLEAN_INPUT );
 	CreateAction( ingameActionSet, XR_DROP_ITEM, XR_ACTION_TYPE_BOOLEAN_INPUT );
+	CreateAction( ingameActionSet, XR_HAND_POSE, XR_ACTION_TYPE_POSE_INPUT, 2, handPaths );
+	CreateAction( ingameActionSet, XR_HAND_GRIP, XR_ACTION_TYPE_FLOAT_INPUT, 2, handPaths );
+	CreateAction( ingameActionSet, XR_HAND_TRIGGER, XR_ACTION_TYPE_FLOAT_INPUT, 2, handPaths );
 
 	menuActionSet = CreateActionSet( "menu" );
 	CreateAction( menuActionSet, XR_MENU_AIM, XR_ACTION_TYPE_POSE_INPUT, 2, handPaths );
@@ -357,6 +364,24 @@ void OpenXRInput::UpdateInput( int axis[6], idList<padActionChange_t> &actionCha
 	auto frobHandState = GetPose( XR_AIM, referenceSpace, time );
 	poseInput.frobHandAxis = QuatFromXr( frobHandState.second.orientation );
 	poseInput.frobHandPos = Vec3FromXr( frobHandState.second.position );
+
+	// head and both hands for the VR hands in game
+	{
+		XrSpaceLocation headLocation { XR_TYPE_SPACE_LOCATION, nullptr };
+		XrResult result = xrLocateSpace( hmdSpace, referenceSpace, time, &headLocation );
+		if ( XR_SUCCEEDED( result ) ) {
+			poseInput.headPos = Vec3FromXr( headLocation.pose.position );
+			poseInput.headAxis = QuatFromXr( headLocation.pose.orientation );
+		}
+	}
+	for ( int h = 0; h < 2; ++h ) {
+		auto handState = GetPose( XR_HAND_POSE, referenceSpace, time, handPaths[h] );
+		poseInput.handTracked[h] = handState.first;
+		poseInput.handPos[h] = Vec3FromXr( handState.second.position );
+		poseInput.handAxis[h] = QuatFromXr( handState.second.orientation );
+		poseInput.handGrip[h] = GetFloat( XR_HAND_GRIP, handPaths[h] ).second;
+		poseInput.handTrigger[h] = GetFloat( XR_HAND_TRIGGER, handPaths[h] ).second;
+	}
 
 	auto menuState = GetBool( XR_MENU_OPEN );
 	if ( menuState.first ) {
