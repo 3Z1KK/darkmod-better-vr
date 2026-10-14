@@ -217,9 +217,8 @@ void OpenXRBackend::RenderStereoView( const frameData_t *frameData ) {
 		if ( vr_comfortVignette.GetBool() && vignetteEnabled ) {
 			DrawComfortVignette((eyeView_t)eye);
 		}
-		if ( !frameData->render2D && aimIndicatorValid ) {
-			DrawAimIndicator( frameData->mouseAimSize );
-		}
+		// the aim indicator (a mouse-aim helper from the keyboard/mouse VR mode) is not drawn anymore,
+		// a VR game is played without crosshairs
 	}
 	foveatedHelper.DisableVariableRateShading();
 
