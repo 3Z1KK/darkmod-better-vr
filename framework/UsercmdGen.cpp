@@ -880,7 +880,11 @@ void idUsercmdGenLocal::MakeCurrent( void ) {
 			cmd.vrHandGrip[h] = poseInput.handGrip[h];
 			cmd.vrHandTrigger[h] = poseInput.handTrigger[h];
 			cmd.vrHandFlags[h] = poseInput.handTracked[h] ? VR_HAND_TRACKED : 0;
+			cmd.vrHandLinVel[h] = poseInput.handLinVel[h];
+			cmd.vrHandAngVel[h] = poseInput.handAngVel[h];
 		}
+		cmd.vrHeadFloorZ = poseInput.headFloorZ;
+		cmd.vrHeadFlags = ( poseInput.headTracked ? VR_HEAD_TRACKED : 0 ) | ( poseInput.headFloorValid ? VR_HEAD_FLOOR : 0 );
 
 		// check to make sure the angles haven't wrapped
 		if ( viewangles[PITCH] - oldAngles[PITCH] > 90 ) {
@@ -1168,7 +1172,12 @@ void idUsercmdGenLocal::Joystick( void ) {
 		poseInput.handGrip[h] = 0.0f;
 		poseInput.handTrigger[h] = 0.0f;
 		poseInput.handTracked[h] = false;
+		poseInput.handLinVel[h].Zero();
+		poseInput.handAngVel[h].Zero();
 	}
+	poseInput.headTracked = false;
+	poseInput.headFloorValid = false;
+	poseInput.headFloorZ = 0.0f;
 	vrBackend->UpdateInput( joystickAxis, stateChanges, poseInput );
 	for ( auto change : stateChanges ) {
 		if ( change.active ) {

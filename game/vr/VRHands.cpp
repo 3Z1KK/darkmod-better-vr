@@ -26,13 +26,16 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 
 idCVar vr_handsEnable( "vr_handsEnable", "1", CVAR_GAME | CVAR_BOOL, "VR: interact with the world through tracked hands" );
 idCVar vr_handTouchRadius( "vr_handTouchRadius", "2.5", CVAR_GAME | CVAR_FLOAT, "VR: radius (game units) around the palm that counts as touching" );
-idCVar vr_handMaxAccel( "vr_handMaxAccel", "9000", CVAR_GAME | CVAR_FLOAT, "VR: maximum acceleration (units/s^2) a hand can give a light held object" );
-idCVar vr_handMaxAngAccel( "vr_handMaxAngAccel", "300", CVAR_GAME | CVAR_FLOAT, "VR: maximum angular acceleration (rad/s^2) a hand can give a light held object" );
-idCVar vr_handLiftMass( "vr_handLiftMass", "10", CVAR_GAME | CVAR_FLOAT, "VR: objects heavier than this get proportionally weaker acceleration from one hand" );
-idCVar vr_handFollowTime( "vr_handFollowTime", "0.05", CVAR_GAME | CVAR_FLOAT, "VR: time (s) a held object takes to close its distance to the hand" );
+idCVar vr_handCollisionSize( "vr_handCollisionSize", "1.5", CVAR_GAME | CVAR_FLOAT, "VR: half size (game units) of the hand's collision box against the world" );
+idCVar vr_handCollision( "vr_handCollision", "1", CVAR_GAME | CVAR_BOOL, "VR: free hands are stopped by walls and solid objects" );
+idCVar vr_handLiftMass( "vr_handLiftMass", "20", CVAR_GAME | CVAR_FLOAT, "VR: the heaviest mass one hand can just hold up against gravity (hand strength)" );
+idCVar vr_handWristLever( "vr_handWristLever", "6", CVAR_GAME | CVAR_FLOAT, "VR: wrist strength: maximum torque = hand strength x this lever (game units)" );
+idCVar vr_handTwoHandWrist( "vr_handTwoHandWrist", "0.35", CVAR_GAME | CVAR_FLOAT, "VR: wrist torque factor per hand when both hands hold the same object" );
+idCVar vr_handFollowTime( "vr_handFollowTime", "0.03", CVAR_GAME | CVAR_FLOAT, "VR: time (s) in which a held object should close its distance to the hand" );
+idCVar vr_handRotFollowTime( "vr_handRotFollowTime", "0.03", CVAR_GAME | CVAR_FLOAT, "VR: time (s) in which a held object should close its angle to the hand" );
 idCVar vr_handMaxSpeed( "vr_handMaxSpeed", "1500", CVAR_GAME | CVAR_FLOAT, "VR: maximum speed (units/s) a hand can drive a held object to" );
-idCVar vr_gripBreakDistance( "vr_gripBreakDistance", "14", CVAR_GAME | CVAR_FLOAT, "VR: grip slips if a held object is this far (units) from where the hand wants it" );
-idCVar vr_gripBreakTime( "vr_gripBreakTime", "250", CVAR_GAME | CVAR_INTEGER, "VR: time (ms) a held object may stay too far before the grip slips" );
+idCVar vr_gripBreakDistance( "vr_gripBreakDistance", "16", CVAR_GAME | CVAR_FLOAT, "VR: grip slips if the grip point is this far (units) from the controller" );
+idCVar vr_gripBreakTime( "vr_gripBreakTime", "300", CVAR_GAME | CVAR_INTEGER, "VR: time (ms) the grip point may stay too far before the grip slips" );
 idCVar vr_gripPressThreshold( "vr_gripPressThreshold", "0.6", CVAR_GAME | CVAR_FLOAT, "VR: grip/trigger value that counts as pressed" );
 idCVar vr_gripReleaseThreshold( "vr_gripReleaseThreshold", "0.35", CVAR_GAME | CVAR_FLOAT, "VR: grip/trigger value that counts as released" );
 idCVar vr_stomachDrop( "vr_stomachDrop", "20", CVAR_GAME | CVAR_FLOAT, "VR: stomach inventory zone, distance (units) below the head" );
@@ -174,19 +177,27 @@ namespace {
 
 void idVRHand::Init( int handIndex ) {
 	index = handIndex;
-	pos.Zero();
-	axis.Identity();
-	lastPos.Zero();
-	velocity.Zero();
+	input.tracked = false;
+	input.pos.Zero();
+	input.axis.Identity();
+	input.vel.Zero();
+	input.angVel.Zero();
+	input.grip = 0.0f;
+	input.trigger = 0.0f;
+	input.eye.Zero();
 	tracked = false;
 	gripDown = false;
 	triggerDown = false;
+	physPos.Zero();
+	physValid = false;
+	visualPos.Zero();
+	visualAxis.Identity();
 	touched = nullptr;
 	touchedBodyId = 0;
 	interaction = IK_NONE;
 	held = nullptr;
 	heldBodyId = 0;
-	farFromHandTime = 0;
+	slipTime = 0;
 	stomachRelease = false;
 	model = nullptr;
 	renderHandle = -1;
@@ -201,6 +212,7 @@ void idVRHand::Shutdown() {
 	held = nullptr;
 	touched = nullptr;
 	interaction = IK_NONE;
+	physValid = false;
 }
 
 bool idVRHand::CanHold( idEntity *ent ) const {
@@ -230,7 +242,7 @@ idEntity *idVRHand::FindTouchedEntity( idPlayer *player, int &bodyId ) const {
 	}
 
 	const int mask = CONTENTS_SOLID | CONTENTS_OPAQUE | CONTENTS_BODY | CONTENTS_CORPSE | CONTENTS_RENDERMODEL | CONTENTS_FROBABLE;
-	idBounds bounds( pos );
+	idBounds bounds( physPos );
 	bounds.ExpandSelf( radius );
 
 	idClip_ClipModelList clipModels;
@@ -250,10 +262,10 @@ idEntity *idVRHand::FindTouchedEntity( idPlayer *player, int &bodyId ) const {
 			continue;
 		}
 		// precise overlap test between the palm and the clip model
-		if ( !gameLocal.clip.ContentsModel( pos, palmClip, mat3_identity, -1, cm->Handle(), cm->GetOrigin(), cm->GetAxis() ) ) {
+		if ( !gameLocal.clip.ContentsModel( physPos, palmClip, mat3_identity, -1, cm->Handle(), cm->GetOrigin(), cm->GetAxis() ) ) {
 			continue;
 		}
-		const float dist = ( cm->GetAbsBounds().GetCenter() - pos ).LengthSqr();
+		const float dist = ( cm->GetAbsBounds().GetCenter() - physPos ).LengthSqr();
 		if ( dist < bestDist ) {
 			bestDist = dist;
 			best = target;
@@ -272,9 +284,98 @@ idEntity *idVRHand::FindTouchedEntity( idPlayer *player, int &bodyId ) const {
 	return best;
 }
 
-void idVRHand::GetHoldTarget( idVec3 &origin, idMat3 &outAxis ) const {
-	origin = pos + heldRelOrigin * axis;
-	outAxis = heldRelAxis * axis;
+void idVRHand::MoveFreeHand( idPlayer *player ) {
+	const idVec3 &target = input.pos;
+	if ( !vr_handCollision.GetBool() ) {
+		physPos = target;
+		physValid = true;
+		return;
+	}
+
+	// the hand moves from where it was towards the controller and is stopped by solid things, sliding along them.
+	// If it got left far behind (or stuck), it reaches out again from the head, so it can never pass through walls.
+	const float s = vr_handCollisionSize.GetFloat();
+	const idBounds bounds( idVec3( -s, -s, -s ), idVec3( s, s, s ) );
+	static idClipModel *handClip = nullptr;
+	static float handClipSize = -1.0f;
+	if ( handClip == nullptr || handClipSize != s ) {
+		delete handClip;
+		handClip = new idClipModel( idTraceModel( bounds ) );
+		handClipSize = s;
+	}
+	idVec3 start = physPos;
+	if ( !physValid || ( physPos - target ).LengthSqr() > Square( 24.0f ) ) {
+		start = input.eye;
+	}
+	trace_t tr;
+	for ( int attempt = 0; attempt < 2; attempt++ ) {
+		idVec3 pos = start;
+		idVec3 move = target - start;
+		// a hand that ended up inside something (a door swung into it, ...) reaches out again from the head
+		bool stuck = ( gameLocal.clip.Contents( pos, handClip, mat3_identity, MASK_SOLID, player ) & MASK_SOLID ) != 0;
+		for ( int bump = 0; !stuck && bump < 3 && move.LengthSqr() > Square( 0.01f ); bump++ ) {
+			gameLocal.clip.TraceBounds( tr, pos, pos + move, bounds, MASK_SOLID, player );
+			pos = tr.endpos;
+			if ( tr.fraction >= 1.0f ) {
+				break;
+			}
+			move *= ( 1.0f - tr.fraction );
+			move -= ( move * tr.c.normal ) * tr.c.normal;
+		}
+		if ( !stuck ) {
+			physPos = pos;
+			physValid = true;
+			return;
+		}
+		if ( start == input.eye ) {
+			break;
+		}
+		start = input.eye;
+	}
+	physPos = input.eye;
+	physValid = true;
+}
+
+void idVRHand::FindContact( idEntity *ent, int bodyId ) {
+	idPhysics *phys = ent->GetPhysics();
+	const idVec3 bodyOrigin = phys->GetOrigin( bodyId );
+	const idMat3 bodyAxisT = phys->GetAxis( bodyId ).Transpose();
+	grip.contactPoint = grip.anchor;
+	grip.contactNormal.Zero();
+
+	idClipModel *cm = phys->GetClipModel( bodyId );
+	if ( cm == nullptr ) {
+		return;
+	}
+	// look from the palm towards the body for the nearest bit of its surface
+	idVec3 dir = cm->GetAbsBounds().GetCenter() - physPos;
+	if ( dir.Normalize() < 0.001f ) {
+		return;
+	}
+	const idVec3 end = physPos + dir * ( vr_handTouchRadius.GetFloat() * 3.0f );
+	trace_t tr;
+	gameLocal.clip.TranslationModel( tr, physPos, end, nullptr, mat3_identity, -1, cm->Handle(), cm->GetOrigin(), cm->GetAxis() );
+	if ( tr.fraction > 0.0f && tr.fraction < 1.0f ) {
+		grip.contactPoint = ( tr.c.point - bodyOrigin ) * bodyAxisT;
+		grip.contactNormal = tr.c.normal * bodyAxisT;
+	}
+}
+
+idVec3 idVRHand::GetGripTarget() const {
+	return input.pos + grip.controllerOffset * input.axis;
+}
+
+void idVRHand::GetGripWorld( idVec3 &point, idMat3 &handAxis ) const {
+	idEntity *ent = held.GetEntity();
+	if ( ent == nullptr ) {
+		point = input.pos;
+		handAxis = input.axis;
+		return;
+	}
+	idPhysics *phys = ent->GetPhysics();
+	const idMat3 bodyAxis = phys->GetAxis( heldBodyId );
+	point = phys->GetOrigin( heldBodyId ) + grip.anchor * bodyAxis;
+	handAxis = grip.handAxis * bodyAxis;
 }
 
 void idVRHand::StartInteraction( idPlayer *player ) {
@@ -283,27 +384,37 @@ void idVRHand::StartInteraction( idPlayer *player ) {
 		return;
 	}
 
-	const bool inventory = IsInventoryItem( ent );
-	const bool holdable = CanHold( ent );
-	if ( holdable || inventory ) {
+	if ( CanHold( ent ) ) {
+		// grip the object where the hand touches it
 		held = ent;
-		heldBodyId = holdable ? touchedBodyId : 0;
+		heldBodyId = touchedBodyId;
 		idPhysics *phys = ent->GetPhysics();
-		const idVec3 &bodyOrigin = phys->GetOrigin( heldBodyId );
-		const idMat3 &bodyAxis = phys->GetAxis( heldBodyId );
-		heldRelOrigin = ( bodyOrigin - pos ) * axis.Transpose();
-		heldRelAxis = bodyAxis * axis.Transpose();
-		farFromHandTime = 0;
-		if ( holdable ) {
-			interaction = IK_HOLD;
-			phys->Activate();
-		} else {
-			interaction = IK_CARRY;
-			carryHomeOrigin = ent->GetPhysics()->GetOrigin();
-			carryHomeAxis = ent->GetPhysics()->GetAxis();
-		}
+		const idVec3 bodyOrigin = phys->GetOrigin( heldBodyId );
+		const idMat3 bodyAxisT = phys->GetAxis( heldBodyId ).Transpose();
+		grip.anchor = ( physPos - bodyOrigin ) * bodyAxisT;
+		grip.handAxis = input.axis * bodyAxisT;
+		grip.controllerOffset = ( physPos - input.pos ) * input.axis.Transpose();
+		FindContact( ent, heldBodyId );
+		slipTime = 0;
+		interaction = IK_HOLD;
+		phys->Activate();
 		player->vrHands.MakeNonSolidToPlayer( ent );
-		HandsDebug( "hand %d %s %s (body %d)", index, interaction == IK_HOLD ? "holds" : "carries", ent->name.c_str(), heldBodyId );
+		HandsDebug( "hand %d grips %s (body %d, mass %.2f)", index, ent->name.c_str(), heldBodyId, phys->GetMass( heldBodyId ) );
+		return;
+	}
+
+	if ( IsInventoryItem( ent ) ) {
+		// static inventory item (can't move physically): carried directly
+		held = ent;
+		heldBodyId = 0;
+		interaction = IK_CARRY;
+		const idMat3 ctrlAxisT = input.axis.Transpose();
+		carryHomeOrigin = ent->GetPhysics()->GetOrigin();
+		carryHomeAxis = ent->GetPhysics()->GetAxis();
+		carryRelOrigin = ( carryHomeOrigin - input.pos ) * ctrlAxisT;
+		carryRelAxis = carryHomeAxis * ctrlAxisT;
+		player->vrHands.MakeNonSolidToPlayer( ent );
+		HandsDebug( "hand %d carries %s", index, ent->name.c_str() );
 		return;
 	}
 
@@ -318,6 +429,11 @@ void idVRHand::StartInteraction( idPlayer *player ) {
 void idVRHand::Release( idPlayer *player, bool allowInventory ) {
 	idEntity *ent = held.GetEntity();
 	const interactionKind_t kind = interaction;
+	// the free hand continues from where the drawn hand was
+	if ( kind == IK_HOLD && ent != nullptr ) {
+		idMat3 a;
+		GetGripWorld( physPos, a );
+	}
 	interaction = IK_NONE;
 	held = nullptr;
 
@@ -358,7 +474,12 @@ void idVRHand::Release( idPlayer *player, bool allowInventory ) {
 	if ( !otherHolds ) {
 		player->vrHands.ReleaseNonSolidToPlayer( ent, false );
 	}
-	HandsDebug( "hand %d releases %s", index, ent->name.c_str() );
+	if ( kind == IK_HOLD ) {
+		// the object keeps the motion the hand gave it last frame (it was moving with the controller)
+		HandsDebug( "hand %d lets go of %s at %.0f units/s", index, ent->name.c_str(), ent->GetPhysics()->GetLinearVelocity( heldBodyId ).Length() );
+	} else {
+		HandsDebug( "hand %d releases %s", index, ent->name.c_str() );
+	}
 }
 
 void idVRHand::UpdateRenderEntity() {
@@ -377,8 +498,8 @@ void idVRHand::UpdateRenderEntity() {
 	}
 	memset( &renderEntity, 0, sizeof( renderEntity ) );
 	renderEntity.hModel = model;
-	renderEntity.origin = pos;
-	renderEntity.axis = axis;
+	renderEntity.origin = visualPos;
+	renderEntity.axis = visualAxis;
 	renderEntity.bounds = model->Bounds();
 	renderEntity.noShadow = true;
 	renderEntity.suppressSurfaceInViewID = VID_LIGHTGEM;
@@ -394,9 +515,29 @@ void idVRHand::UpdateRenderEntity() {
 	}
 }
 
-void idVRHand::Update( idPlayer *player, const idVec3 &worldPos, const idMat3 &worldAxis, bool isTracked, float grip, float trigger, float dt ) {
-	const bool wasTracked = tracked;
-	tracked = isTracked;
+void idVRHand::UpdateVisual() {
+	if ( tracked ) {
+		switch ( interaction ) {
+		case IK_HOLD:
+			// the drawn hand stays on the grip point, even if the controller moved on
+			GetGripWorld( visualPos, visualAxis );
+			break;
+		case IK_CARRY:
+			visualPos = input.pos;
+			visualAxis = input.axis;
+			break;
+		default:
+			visualPos = physValid ? physPos : input.pos;
+			visualAxis = input.axis;
+			break;
+		}
+	}
+	UpdateRenderEntity();
+}
+
+void idVRHand::Update( idPlayer *player, const vrHandInput_t &in, float dt ) {
+	input = in;
+	tracked = in.tracked;
 	if ( !tracked ) {
 		if ( interaction != IK_NONE ) {
 			Release( player, false );
@@ -404,16 +545,13 @@ void idVRHand::Update( idPlayer *player, const idVec3 &worldPos, const idMat3 &w
 		gripDown = false;
 		triggerDown = false;
 		touched = nullptr;
-		UpdateRenderEntity();
+		physValid = false;
 		return;
 	}
 
-	lastPos = wasTracked ? pos : worldPos;
-	pos = worldPos;
-	axis = worldAxis;
-	if ( dt > 0 ) {
-		// smoothed hand velocity, used to throw things
-		velocity = velocity * 0.5f + ( ( pos - lastPos ) / dt ) * 0.5f;
+	// free hands are stopped by the world
+	if ( interaction != IK_HOLD ) {
+		MoveFreeHand( player );
 	}
 
 	// what is the hand touching?
@@ -422,18 +560,18 @@ void idVRHand::Update( idPlayer *player, const idVec3 &worldPos, const idMat3 &w
 	touched = nowTouching;
 	touchedBodyId = bodyId;
 
-	// grip with hysteresis
+	// grip and trigger with hysteresis
 	const bool wasGrip = gripDown;
 	if ( gripDown ) {
-		gripDown = grip > vr_gripReleaseThreshold.GetFloat();
+		gripDown = in.grip > vr_gripReleaseThreshold.GetFloat();
 	} else {
-		gripDown = grip > vr_gripPressThreshold.GetFloat();
+		gripDown = in.grip > vr_gripPressThreshold.GetFloat();
 	}
 	const bool wasTrigger = triggerDown;
 	if ( triggerDown ) {
-		triggerDown = trigger > vr_gripReleaseThreshold.GetFloat();
+		triggerDown = in.trigger > vr_gripReleaseThreshold.GetFloat();
 	} else {
-		triggerDown = trigger > vr_gripPressThreshold.GetFloat();
+		triggerDown = in.trigger > vr_gripPressThreshold.GetFloat();
 	}
 
 	if ( gripDown && !wasGrip && interaction == IK_NONE ) {
@@ -455,21 +593,17 @@ void idVRHand::Update( idPlayer *player, const idVec3 &worldPos, const idMat3 &w
 		}
 	}
 
-	// carried static items follow the hand directly
+	// carried static items follow the controller directly
 	if ( interaction == IK_CARRY ) {
 		idEntity *ent = held.GetEntity();
 		if ( ent == nullptr ) {
 			interaction = IK_NONE;
 		} else {
-			idVec3 o;
-			idMat3 a;
-			GetHoldTarget( o, a );
-			ent->SetOrigin( o );
-			ent->SetAxis( a );
+			ent->SetOrigin( in.pos + carryRelOrigin * in.axis );
+			ent->SetAxis( carryRelAxis * in.axis );
 		}
 	}
 
-	// a held object that gets stuck far away slips out of the hand
 	if ( interaction == IK_HOLD ) {
 		idEntity *ent = held.GetEntity();
 		if ( ent == nullptr || ent->IsHidden() ) {
@@ -479,23 +613,21 @@ void idVRHand::Update( idPlayer *player, const idVec3 &worldPos, const idMat3 &w
 				player->vrHands.ReleaseNonSolidToPlayer( ent, true );
 			}
 		} else {
-			idVec3 o;
+			// the grip slips if the object stays too far from where the hand wants it
+			idVec3 point;
 			idMat3 a;
-			GetHoldTarget( o, a );
-			const float dist = ( ent->GetPhysics()->GetOrigin( heldBodyId ) - o ).Length();
-			if ( dist > vr_gripBreakDistance.GetFloat() ) {
-				farFromHandTime += idMath::FtoiRound( dt * 1000 );
-				if ( farFromHandTime > vr_gripBreakTime.GetInteger() ) {
-					HandsDebug( "hand %d loses grip on %s", index, ent->name.c_str() );
+			GetGripWorld( point, a );
+			if ( ( point - GetGripTarget() ).LengthSqr() > Square( vr_gripBreakDistance.GetFloat() ) ) {
+				slipTime += idMath::FtoiRound( dt * 1000 );
+				if ( slipTime > vr_gripBreakTime.GetInteger() ) {
+					HandsDebug( "hand %d loses its grip on %s", index, ent->name.c_str() );
 					Release( player, false );
 				}
 			} else {
-				farFromHandTime = 0;
+				slipTime = 0;
 			}
 		}
 	}
-
-	UpdateRenderEntity();
 }
 
 /*
@@ -510,6 +642,7 @@ void idVRHands::Init() {
 	highlighted.Clear();
 	clipRestores.Clear();
 	lastTime = 0;
+	lastDt = 0.0f;
 	initialized = true;
 }
 
@@ -667,84 +800,113 @@ void idVRHands::UpdateHighlights() {
 	}
 }
 
+/*
+ * Every hand that holds a body pulls its grip point towards the controller and turns the body with its wrist.
+ * Both are velocity changes computed from the body's real mass and inertia, capped by what a hand can do in
+ * one frame, so the result follows physics: a bottle sits in the hand, a chair held by a leg is heavy at the
+ * far end and tips, a crate barely moves with one hand and lifts slowly with two.
+ */
 void idVRHands::DriveHeldObjects( float dt ) {
 	if ( dt <= 0 ) {
 		return;
 	}
-	bool done[2] = { false, false };
+	const idVec3 gravity = gameLocal.GetGravity();
+	const float handForce = vr_handLiftMass.GetFloat() * gravity.Length();
+	const float wristTorque = handForce * vr_handWristLever.GetFloat();
+
 	for ( int h = 0; h < 2; h++ ) {
-		if ( done[h] || hands[h].GetInteraction() != idVRHand::IK_HOLD ) {
+		idVRHand &hand = hands[h];
+		if ( hand.GetInteraction() != idVRHand::IK_HOLD ) {
 			continue;
 		}
-		idEntity *ent = hands[h].GetHeld();
+		idEntity *ent = hand.GetHeld();
 		if ( ent == nullptr ) {
 			continue;
 		}
-		const int bodyId = hands[h].GetHeldBodyId();
-
-		// gather all hands holding the same body
-		idVec3 targetOrigin;
-		idMat3 targetAxis;
-		hands[h].GetHoldTarget( targetOrigin, targetAxis );
-		idVec3 handVel = hands[h].GetVelocity();
-		int numHands = 1;
-		for ( int o = h + 1; o < 2; o++ ) {
+		const int bodyId = hand.GetHeldBodyId();
+		int numHands = 0;
+		for ( int o = 0; o < 2; o++ ) {
 			if ( hands[o].GetInteraction() == idVRHand::IK_HOLD && hands[o].GetHeld() == ent && hands[o].GetHeldBodyId() == bodyId ) {
-				idVec3 oo;
-				idMat3 oa;
-				hands[o].GetHoldTarget( oo, oa );
-				targetOrigin += oo;
-				handVel += hands[o].GetVelocity();
 				numHands++;
-				done[o] = true;
 			}
 		}
-		targetOrigin /= numHands;
-		handVel /= numHands;
 
 		idPhysics *phys = ent->GetPhysics();
-		float mass = phys->GetMass( bodyId );
-		if ( mass <= 0.0f ) {
-			mass = 1.0f;
+		const idVec3 bodyOrigin = phys->GetOrigin( bodyId );
+		const idMat3 bodyAxis = phys->GetAxis( bodyId );
+		impactInfo_t info;
+		phys->GetImpactInfo( bodyId, bodyOrigin, &info );
+		if ( info.invMass <= 0.0f ) {
+			continue;
 		}
-		// each hand can only give a limited acceleration, heavier things get proportionally less
-		const float strength = numHands * idMath::ClampFloat( 0.0f, 1.0f, vr_handLiftMass.GetFloat() / mass );
-		const float maxAccel = vr_handMaxAccel.GetFloat() * strength;
-		const float maxAngAccel = vr_handMaxAngAccel.GetFloat() * strength;
+		const idMat3 invInertia = info.invInertiaTensor;
+		idMat3 inertia = invInertia;
+		if ( !inertia.InverseSelf() ) {
+			continue;
+		}
+		idVec3 linVel = phys->GetLinearVelocity( bodyId );
+		idVec3 angVel = phys->GetAngularVelocity( bodyId );
+		const vrHandInput_t &in = hand.GetInput();
 
-		// linear: drive towards the hand, but only as fast as the hand's strength allows
-		const idVec3 origin = phys->GetOrigin( bodyId );
-		const idVec3 curVel = phys->GetLinearVelocity( bodyId );
-		idVec3 desiredVel = handVel + ( targetOrigin - origin ) / Max( vr_handFollowTime.GetFloat(), 0.01f );
-		const float maxSpeed = vr_handMaxSpeed.GetFloat();
-		if ( desiredVel.LengthSqr() > maxSpeed * maxSpeed ) {
-			desiredVel.Normalize();
-			desiredVel *= maxSpeed;
-		}
-		idVec3 deltaVel = desiredVel - curVel;
-		const float maxDelta = maxAccel * dt;
-		if ( deltaVel.LengthSqr() > maxDelta * maxDelta ) {
-			deltaVel.Normalize();
-			deltaVel *= maxDelta;
-		}
-
-		// angular: rotate the held body towards the orientation it had relative to the hand
-		const idMat3 curAxis = phys->GetAxis( bodyId );
-		idVec3 rotation( 0, 0, 0 );
-		for ( int i = 0; i < 3; i++ ) {
-			rotation += curAxis[i].Cross( targetAxis[i] );
-		}
-		rotation *= 0.5f;
-		const idVec3 curAngVel = phys->GetAngularVelocity( bodyId );
-		idVec3 deltaAngVel = rotation / Max( vr_handFollowTime.GetFloat(), 0.01f ) - curAngVel;
-		const float maxAngDelta = maxAngAccel * dt;
-		if ( deltaAngVel.LengthSqr() > maxAngDelta * maxAngDelta ) {
-			deltaAngVel.Normalize();
-			deltaAngVel *= maxAngDelta;
+		// wrist: turn the body so the hand keeps its grip orientation
+		{
+			const idMat3 desired = hand.GetGrip().handAxis.Transpose() * in.axis;
+			idVec3 axisSum( 0, 0, 0 );
+			float dots = 0.0f;
+			for ( int i = 0; i < 3; i++ ) {
+				axisSum += bodyAxis[i].Cross( desired[i] );
+				dots += bodyAxis[i] * desired[i];
+			}
+			const float angle = idMath::ACos( idMath::ClampFloat( -1.0f, 1.0f, ( dots - 1.0f ) * 0.5f ) );
+			idVec3 rotError( 0, 0, 0 );
+			if ( axisSum.Normalize() > 1e-5f ) {
+				rotError = axisSum * angle;
+			}
+			const idVec3 wantAngVel = in.angVel + rotError / Max( vr_handRotFollowTime.GetFloat(), dt );
+			idVec3 dL = inertia * ( wantAngVel - angVel );
+			const float maxL = wristTorque * ( numHands > 1 ? vr_handTwoHandWrist.GetFloat() : 1.0f ) * dt;
+			if ( dL.LengthSqr() > maxL * maxL ) {
+				dL.Normalize();
+				dL *= maxL;
+			}
+			angVel += invInertia * dL;
 		}
 
-		phys->SetLinearVelocity( curVel + deltaVel, bodyId );
-		phys->SetAngularVelocity( curAngVel + deltaAngVel, bodyId );
+		// arm: pull the grip point towards the controller
+		{
+			idVec3 gripPoint;
+			idMat3 unused;
+			hand.GetGripWorld( gripPoint, unused );
+			impactInfo_t pointInfo;
+			phys->GetImpactInfo( bodyId, gripPoint, &pointInfo );
+			const idVec3 r = pointInfo.position;
+			const idVec3 pointVel = linVel + angVel.Cross( r );
+
+			// hold against gravity too (shared between the hands), as far as the hand's strength allows
+			idVec3 wantVel = in.vel + ( hand.GetGripTarget() - gripPoint ) / Max( vr_handFollowTime.GetFloat(), dt ) - gravity * ( dt / numHands );
+			const float maxSpeed = vr_handMaxSpeed.GetFloat();
+			if ( wantVel.LengthSqr() > maxSpeed * maxSpeed ) {
+				wantVel.Normalize();
+				wantVel *= maxSpeed;
+			}
+
+			// impulse at the grip point that gives the point the wanted velocity change (K = point mass matrix)
+			const idMat3 skew( 0.0f, -r.z, r.y, r.z, 0.0f, -r.x, -r.y, r.x, 0.0f );
+			idMat3 K = mat3_identity * info.invMass - skew * invInertia * skew;
+			if ( K.InverseSelf() ) {
+				idVec3 impulse = K * ( wantVel - pointVel );
+				const float maxImpulse = handForce * dt;
+				if ( impulse.LengthSqr() > maxImpulse * maxImpulse ) {
+					impulse.Normalize();
+					impulse *= maxImpulse;
+				}
+				linVel += impulse * info.invMass;
+				angVel += invInertia * r.Cross( impulse );
+			}
+		}
+
+		phys->SetLinearVelocity( linVel, bodyId );
+		phys->SetAngularVelocity( angVel, bodyId );
 		phys->Activate();
 	}
 }
@@ -758,22 +920,31 @@ void idVRHands::Update( idPlayer *player ) {
 	float dt = lastTime > 0 ? ( now - lastTime ) * 0.001f : 0.0f;
 	lastTime = now;
 	dt = idMath::ClampFloat( 0.0f, 0.1f, dt );
+	lastDt = dt;
 
 	const usercmd_t &cmd = player->usercmd;
 	const renderView_t *view = player->GetRenderView();
 	const bool viewOk = view != nullptr && !player->AI_DEAD;
+	const idVec3 bodyVel = player->GetPhysics()->GetLinearVelocity();
 
 	for ( int h = 0; h < 2; h++ ) {
-		const bool tracked = viewOk && ( cmd.vrHandFlags[h] & VR_HAND_TRACKED ) != 0;
-		idVec3 worldPos( 0, 0, 0 );
-		idMat3 worldAxis = mat3_identity;
-		if ( tracked ) {
-			// the poses are in the headset's local space, which is anchored at the player's view origin
-			worldPos = view->vieworg + cmd.vrHandPos[h] * view->viewaxis;
-			worldAxis = cmd.vrHandAxis[h].ToMat3() * view->viewaxis;
+		vrHandInput_t in;
+		in.tracked = viewOk && ( cmd.vrHandFlags[h] & VR_HAND_TRACKED ) != 0;
+		in.pos.Zero();
+		in.axis.Identity();
+		in.vel.Zero();
+		in.angVel.Zero();
+		in.grip = cmd.vrHandGrip[h];
+		in.trigger = cmd.vrHandTrigger[h];
+		in.eye = player->GetEyePosition();
+		if ( in.tracked ) {
+			in.pos = player->vrBody.LocalToWorld( view, cmd.vrHandPos[h] );
+			in.axis = cmd.vrHandAxis[h].ToMat3() * view->viewaxis;
+			in.vel = cmd.vrHandLinVel[h] * view->viewaxis + bodyVel;
+			in.angVel = cmd.vrHandAngVel[h] * view->viewaxis;
 			hands[h].stomachRelease = IsInStomachZone( cmd.vrHandPos[h], cmd.vrHeadPos, cmd.vrHeadAxis.ToMat3() );
 		}
-		hands[h].Update( player, worldPos, worldAxis, tracked, cmd.vrHandGrip[h], cmd.vrHandTrigger[h], dt );
+		hands[h].Update( player, in, dt );
 	}
 
 	DriveHeldObjects( dt );
@@ -782,4 +953,12 @@ void idVRHands::Update( idPlayer *player ) {
 
 	// the classic view-ray frob target is not used with hands
 	player->m_FrobEntity = nullptr;
+}
+
+void idVRHands::PostThink( idPlayer *player ) {
+	if ( !initialized ) {
+		return;
+	}
+	hands[0].UpdateVisual();
+	hands[1].UpdateVisual();
 }

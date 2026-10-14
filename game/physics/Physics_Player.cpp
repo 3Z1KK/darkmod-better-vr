@@ -6362,3 +6362,101 @@ void idPhysics_Player::ShoulderingMove()
 	if (m_fShoulderingTime < 0.0f)
 		m_fShoulderingTime = 0.0f;
 }
+
+/*
+================
+idPhysics_Player::VRRoomscaleMove
+
+VR room-scale: the player walked in real life, move the body along (horizontal only).
+Collides with the world like walking: slides along walls, steps up small steps and stays on the ground
+when stepping down. The velocity is left alone, so this doesn't count as walking for footsteps or bob.
+================
+*/
+idVec3 idPhysics_Player::VRRoomscaleMove( const idVec3 &delta ) {
+	const idVec3 start = current.origin;
+	if ( delta.LengthSqr() < Square( 0.01f ) ) {
+		return vec3_zero;
+	}
+	const idVec3 up = -gravityNormal;
+	const float stepSize = pm_stepsize.GetFloat();
+	trace_t trace;
+
+	// horizontal slide from a given position, up to 3 bumps
+	auto slide = [&]( const idVec3 &from, idVec3 move ) -> idVec3 {
+		idVec3 pos = from;
+		idVec3 planes[3];
+		int numPlanes = 0;
+		for ( int bump = 0; bump < 3 && move.LengthSqr() > Square( 0.01f ); bump++ ) {
+			gameLocal.clip.Translation( trace, pos, pos + move, clipModel, clipModel->GetAxis(), clipMask, self );
+			pos = trace.endpos;
+			if ( trace.fraction >= 1.0f ) {
+				break;
+			}
+			move *= ( 1.0f - trace.fraction );
+			// slide along the hit plane (and keep it horizontal)
+			idVec3 n = trace.c.normal;
+			n -= ( n * up ) * up;
+			if ( n.Normalize() < 0.001f ) {
+				break;
+			}
+			planes[numPlanes++] = n;
+			move -= ( move * n ) * n;
+			for ( int i = 0; i < numPlanes - 1; i++ ) {
+				if ( move * planes[i] < 0.0f ) {
+					// stuck in a corner
+					move.Zero();
+				}
+			}
+		}
+		return pos;
+	};
+
+	// 1. plain slide
+	idVec3 flatEnd = slide( start, delta );
+	idVec3 best = flatEnd;
+
+	// 2. try stepping up, if the plain move was blocked and we stand on the ground
+	if ( groundPlane && ( flatEnd - start ).LengthSqr() < delta.LengthSqr() * 0.81f ) {
+		gameLocal.clip.Translation( trace, start, start + up * stepSize, clipModel, clipModel->GetAxis(), clipMask, self );
+		if ( trace.fraction > 0.0f ) {
+			const idVec3 raised = trace.endpos;
+			idVec3 stepEnd = slide( raised, delta );
+			// back down onto the step
+			gameLocal.clip.Translation( trace, stepEnd, stepEnd - up * ( ( raised - start ) * up ), clipModel, clipModel->GetAxis(), clipMask, self );
+			if ( trace.fraction < 1.0f && trace.c.normal * up >= MIN_WALK_NORMAL ) {
+				stepEnd = trace.endpos;
+				idVec3 flatDist = flatEnd - start;
+				idVec3 stepDist = stepEnd - start;
+				flatDist -= ( flatDist * up ) * up;
+				stepDist -= ( stepDist * up ) * up;
+				if ( stepDist.LengthSqr() > flatDist.LengthSqr() + 0.01f ) {
+					best = stepEnd;
+				}
+			}
+		}
+	}
+
+	// 3. stay on the ground when walking down small steps or slopes
+	if ( groundPlane ) {
+		gameLocal.clip.Translation( trace, best, best - up * stepSize, clipModel, clipModel->GetAxis(), clipMask, self );
+		if ( trace.fraction < 1.0f && trace.c.normal * up >= MIN_WALK_NORMAL ) {
+			best = trace.endpos;
+		}
+	}
+
+	if ( best == start ) {
+		return vec3_zero;
+	}
+	// the body is positioned in world space; keep the bind master relation intact
+	if ( masterEntity ) {
+		idVec3 masterOrigin;
+		idMat3 masterAxis;
+		self->GetMasterPosition( masterOrigin, masterAxis );
+		current.localOrigin = ( best - masterOrigin ) * masterAxis.Transpose();
+	} else {
+		current.localOrigin = best;
+	}
+	current.origin = best;
+	clipModel->Link( gameLocal.clip, self, 0, current.origin, clipModel->GetAxis() );
+	return best - start;
+}

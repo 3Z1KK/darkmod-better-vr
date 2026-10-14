@@ -142,6 +142,19 @@ void OpenXRInput::Init( XrInstance instance, XrSession session ) {
 	XrResult result = xrCreateReferenceSpace( session, &spaceCreateInfo, &hmdSpace );
 	XR_CheckResult( result, "creating HMD reference space", instance );
 
+	// the stage space knows where the real floor is; used for physical crouching
+	XrReferenceSpaceCreateInfo stageCreateInfo = {
+		XR_TYPE_REFERENCE_SPACE_CREATE_INFO,
+		nullptr,
+		XR_REFERENCE_SPACE_TYPE_STAGE,
+		{ {0, 0, 0, 1}, {0, 0, 0} },
+	};
+	stageSpace = nullptr;
+	if ( XR_FAILED( xrCreateReferenceSpace( session, &stageCreateInfo, &stageSpace ) ) ) {
+		common->Printf( "VR: no stage reference space, real floor height unknown\n" );
+		stageSpace = nullptr;
+	}
+
 	CreateAllActions();
 	LoadSuggestedBindings();
 	AttachActionSets();
@@ -150,6 +163,10 @@ void OpenXRInput::Init( XrInstance instance, XrSession session ) {
 }
 
 void OpenXRInput::Destroy() {
+	if ( stageSpace != nullptr ) {
+		xrDestroySpace( stageSpace );
+		stageSpace = nullptr;
+	}
 	suggestedBindingProfiles.clear();
 	actionSpaces.Clear();
 }
@@ -372,13 +389,26 @@ void OpenXRInput::UpdateInput( int axis[6], idList<padActionChange_t> &actionCha
 		if ( XR_SUCCEEDED( result ) ) {
 			poseInput.headPos = Vec3FromXr( headLocation.pose.position );
 			poseInput.headAxis = QuatFromXr( headLocation.pose.orientation );
+			poseInput.headTracked = ( headLocation.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT ) != 0;
+		}
+		if ( stageSpace != nullptr ) {
+			XrSpaceLocation stageLocation { XR_TYPE_SPACE_LOCATION, nullptr };
+			result = xrLocateSpace( hmdSpace, stageSpace, time, &stageLocation );
+			if ( XR_SUCCEEDED( result ) && ( stageLocation.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT ) ) {
+				poseInput.headFloorValid = true;
+				poseInput.headFloorZ = Vec3FromXr( stageLocation.pose.position ).z;
+			}
 		}
 	}
 	for ( int h = 0; h < 2; ++h ) {
-		auto handState = GetPose( XR_HAND_POSE, referenceSpace, time, handPaths[h] );
-		poseInput.handTracked[h] = handState.first;
-		poseInput.handPos[h] = Vec3FromXr( handState.second.position );
-		poseInput.handAxis[h] = QuatFromXr( handState.second.orientation );
+		XrPosef pose { {0, 0, 0, 1}, {0, 0, 0} };
+		XrVector3f linVel { 0, 0, 0 }, angVel { 0, 0, 0 };
+		poseInput.handTracked[h] = GetPoseAndVelocity( XR_HAND_POSE, referenceSpace, time, handPaths[h], pose, linVel, angVel );
+		poseInput.handPos[h] = Vec3FromXr( pose.position );
+		poseInput.handAxis[h] = QuatFromXr( pose.orientation );
+		poseInput.handLinVel[h] = Vec3FromXr( linVel );
+		// same axis mapping as positions (a proper rotation), but no unit scale for angular velocity
+		poseInput.handAngVel[h] = idVec3( -angVel.z, -angVel.x, angVel.y );
 		poseInput.handGrip[h] = GetFloat( XR_HAND_GRIP, handPaths[h] ).second;
 		poseInput.handTrigger[h] = GetFloat( XR_HAND_TRIGGER, handPaths[h] ).second;
 	}
@@ -590,4 +620,33 @@ std::pair<bool, XrPosef> OpenXRInput::GetPose( Action action, XrSpace referenceS
 	result = xrLocateSpace( FindActionSpace( action, subPath ), referenceSpace, time, &location );
 	XR_CheckResult( result, "getting action space", instance, false );
 	return { state.isActive, location.pose };
+}
+
+bool OpenXRInput::GetPoseAndVelocity( Action action, XrSpace referenceSpace, XrTime time, XrPath subPath, XrPosef &pose, XrVector3f &linVel, XrVector3f &angVel ) {
+	XrActionStatePose state { XR_TYPE_ACTION_STATE_POSE, nullptr };
+	XrActionStateGetInfo info { XR_TYPE_ACTION_STATE_GET_INFO, nullptr, actions[action], subPath };
+	XrResult result = xrGetActionStatePose( session, &info, &state );
+	XR_CheckResult( result, "getting action state", instance, false );
+	if ( XR_FAILED( result ) || !state.isActive ) {
+		return false;
+	}
+
+	XrSpaceVelocity velocity { XR_TYPE_SPACE_VELOCITY, nullptr };
+	XrSpaceLocation location { XR_TYPE_SPACE_LOCATION, &velocity };
+	result = xrLocateSpace( FindActionSpace( action, subPath ), referenceSpace, time, &location );
+	XR_CheckResult( result, "getting action space", instance, false );
+	if ( XR_FAILED( result ) ) {
+		return false;
+	}
+	if ( !( location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT ) ) {
+		return false;
+	}
+	pose = location.pose;
+	if ( velocity.velocityFlags & XR_SPACE_VELOCITY_LINEAR_VALID_BIT ) {
+		linVel = velocity.linearVelocity;
+	}
+	if ( velocity.velocityFlags & XR_SPACE_VELOCITY_ANGULAR_VALID_BIT ) {
+		angVel = velocity.angularVelocity;
+	}
+	return true;
 }

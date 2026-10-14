@@ -33,6 +33,11 @@ struct poseInput_t {
 	float handGrip[2];
 	float handTrigger[2];
 	bool handTracked[2];
+	idVec3 handLinVel[2];
+	idVec3 handAngVel[2];
+	bool headTracked;
+	bool headFloorValid;
+	float headFloorZ;
 };
 
 class OpenXRInput {
@@ -74,6 +79,7 @@ private:
 	XrInstance instance = nullptr;
 	XrSession session = nullptr;
 	XrSpace hmdSpace = nullptr;
+	XrSpace stageSpace = nullptr;	// real floor, if the runtime knows it
 	XrTime refActionTime = 0;
 
 	struct actionSpace_t {
@@ -114,5 +120,6 @@ private:
 	std::pair<bool, float> GetFloat( Action action, XrPath subPath = XR_NULL_PATH );
 	std::pair<bool, idVec2> GetVec2( Action action, XrPath subPath = XR_NULL_PATH );
 	std::pair<bool, XrPosef> GetPose( Action action, XrSpace referenceSpace, XrTime time, XrPath subPath = XR_NULL_PATH );
+	bool GetPoseAndVelocity( Action action, XrSpace referenceSpace, XrTime time, XrPath subPath, XrPosef &pose, XrVector3f &linVel, XrVector3f &angVel );
 };
 

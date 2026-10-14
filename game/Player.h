@@ -19,6 +19,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "Listener.h"
 #include "FrobHelper.h"
 #include "vr/VRHands.h"
+#include "vr/VRBody.h"
 
 class CInventoryItem;
 typedef std::shared_ptr<CInventoryItem> CInventoryItemPtr;
@@ -262,6 +263,7 @@ public:
 
 	usercmd_t				usercmd;
 
+	idVRBody				vrBody;				// VR: keeps the body under the real head, physical crouching
 	idVRHands				vrHands;			// VR: the player's hands, the only way to touch the world in VR
 
 	class idPlayerView		playerView;			// handles damage kicks and effects

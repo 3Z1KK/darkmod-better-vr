@@ -95,6 +95,7 @@ void OpenXRBackend::Init() {
 	vrMirrorShader = programManager->LoadFromFiles( "vr_mirror", "vr/vr_mirror.vert.glsl", "vr/vr_mirror.frag.glsl" );
 	vrAimIndicatorShader = programManager->LoadFromFiles( "aim_indicator", "vr/aim_indicator.vert.glsl", "vr/aim_indicator.frag.glsl" );
 	comfortVignetteShader = programManager->LoadFromFiles( "comfort_vignette", "vr/comfort_vignette.vert.glsl", "vr/comfort_vignette.frag.glsl" );
+	blackoutShader = programManager->LoadFromFiles( "vr_blackout", "vr/comfort_vignette.vert.glsl", "vr/blackout.frag.glsl" );
 
 	foveatedHelper.Init();
 }
@@ -114,6 +115,9 @@ void OpenXRBackend::AdjustRenderView( renderView_t *view ) {
 	if ( !GetPredictedEyePose( LEFT_EYE, leftEyePos, leftEyeRot ) || !GetPredictedEyePose( RIGHT_EYE, rightEyePos, rightEyeRot ) ) {
 		return;
 	}
+	// the game moves the body under the real head and tells us how far the headset space is shifted
+	leftEyePos -= view->vrLocalOffset;
+	rightEyePos -= view->vrLocalOffset;
 
 	float fov[2][4];
 	GetFov( LEFT_EYE, fov[0][0], fov[0][1], fov[0][2], fov[0][3] );
@@ -213,9 +217,13 @@ void OpenXRBackend::RenderStereoView( const frameData_t *frameData ) {
 		VR_ResetFrameBufferState( false );
 		qglClearColor( 0, 0, 0, 1 );
 		qglClear( GL_COLOR_BUFFER_BIT );
+		currentBlackout = 0.0f;
 		ExecuteRenderCommands( frameData, (eyeView_t)eye );
 		if ( vr_comfortVignette.GetBool() && vignetteEnabled ) {
 			DrawComfortVignette((eyeView_t)eye);
+		}
+		if ( currentBlackout > 0.001f ) {
+			DrawBlackout( currentBlackout );
 		}
 		// the aim indicator (a mouse-aim helper from the keyboard/mouse VR mode) is not drawn anymore,
 		// a VR game is played without crosshairs
@@ -332,6 +340,9 @@ void OpenXRBackend::ExecuteRenderCommands( const frameData_t *frameData, eyeView
 				break;
 			}
 			backEnd.viewDef = viewDef;
+			if ( stereo && !viewDef->isSubview && viewDef->renderView.vrAdjusted ) {
+				currentBlackout = Max( currentBlackout, viewDef->renderView.vrBlackout );
+			}
 			if ( drawToPrimary ) {
 				if ( isv3d ) {
 					frameBuffers->EnterPrimary();
@@ -578,6 +589,7 @@ void OpenXRBackend::UpdateViewPose( viewDef_t *viewDef, int eye ) {
 	if ( !GetCurrentEyePose( eye, position, orientation ) ) {
 		return;
 	}
+	position -= viewDef->renderView.vrLocalOffset;
 	idMat3 axis = orientation.ToMat3();
 
 	// update with new pose
@@ -721,6 +733,18 @@ idVec2 OpenXRBackend::ProjectCenterUV( int eye ) {
 	projectedCenter.x /= projectedCenter.w;
 	projectedCenter.y /= projectedCenter.w;
 	return idVec2( 0.5f * (projectedCenter.x + 1), 0.5f * (projectedCenter.y + 1) );
+}
+
+struct BlackoutUniforms : GLSLUniformGroup {
+	UNIFORM_GROUP_DEF( BlackoutUniforms )
+	DEFINE_UNIFORM( float, alpha )
+};
+
+void OpenXRBackend::DrawBlackout( float alpha ) {
+	blackoutShader->Activate();
+	blackoutShader->GetUniformGroup<BlackoutUniforms>()->alpha.Set( idMath::ClampFloat( 0.0f, 1.0f, alpha ) );
+	GL_State( GLS_DEPTHFUNC_ALWAYS | GLS_DEPTHMASK | GLS_SRCBLEND_SRC_ALPHA | GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA );
+	VR_DrawFullScreenQuad();
 }
 
 void OpenXRBackend::DrawComfortVignette(eyeView_t eye) {

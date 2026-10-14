@@ -3418,6 +3418,11 @@ gameReturn_t idGameLocal::RunFrame( const usercmd_t *clientCmds, int timestepMs,
 				}
 			}
 
+			// VR: place the hands on held objects after the objects moved this frame
+			if ( idPlayer *localPlayer = GetLocalPlayer() ) {
+				localPlayer->vrHands.PostThink( localPlayer );
+			}
+
 			// remove any entities that have stopped thinking
 			if ( numEntitiesToDeactivate ) {
 				TRACE_CPU_SCOPE( "DeactivateEntities" )

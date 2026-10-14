@@ -276,6 +276,8 @@ typedef struct renderView_s {
 	bool					isMirror;
 	float					nearZOffset;
 	bool					vrAdjusted;			// set by the VR backend for the player view; other views are rendered unchanged
+	idVec3					vrLocalOffset;		// VR: subtracted from headset-local poses (the body follows the real head)
+	float					vrBlackout;			// VR: 0..1 fade to black (real head inside a wall)
 } renderView_t;
 
 

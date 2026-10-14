@@ -137,6 +137,13 @@ public:
 	int						GetLastJumpTime() const; // SteveL #3716
 
 	/**
+	* VR room-scale: move the player body horizontally by the given offset (the player walked in real life),
+	* colliding with the world and stepping up/down like normal walking. Does not change the player's velocity,
+	* so it doesn't count as walking (no footsteps, no bob). Returns the distance actually moved.
+	**/
+	idVec3					VRRoomscaleMove( const idVec3 &delta );
+
+	/**
 	* Returns the reference entity velocity.  Nonzero only when the
 	* player is climbing/roping so that their reference frame
 	* is determined by some ent they're attached to

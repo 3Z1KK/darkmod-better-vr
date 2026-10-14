@@ -89,6 +89,7 @@ private:
 	void DrawAimIndicator( float size );
 	void UpdateFrameStatus( const frameData_t *frameData );
 	void DrawComfortVignette(eyeView_t eye);
+	void DrawBlackout( float alpha );
 
 	eyeView_t currentEye;
 	GLSLProgram *vrMirrorShader = nullptr;
@@ -104,6 +105,8 @@ private:
 	GLSLProgram *vrAimIndicatorShader = nullptr;
 
 	GLSLProgram *comfortVignetteShader = nullptr;
+	GLSLProgram *blackoutShader = nullptr;
+	float currentBlackout = 0.0f;
 	bool vignetteEnabled = false;
 	idVec3 lastCameraPosition;
 	idAngles lastCameraAngles;

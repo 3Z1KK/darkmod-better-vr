@@ -6365,12 +6365,15 @@ void idPlayer::EvaluateControls( void )
 
 void idPlayer::EvaluateCrouch()
 {
+	// VR: read the real head height (crouching in real life crouches the body)
+	vrBody.UpdateHead( this );
+
 	if ( GetImmobilization() & EIM_CROUCH) 
 	{
 		m_IdealCrouchState = false;
 		return;
 	} 
-	m_IdealCrouchState = m_CrouchIntent;
+	m_IdealCrouchState = m_CrouchIntent || vrBody.IsPhysicallyCrouched();
 }
 
 
@@ -7676,6 +7679,11 @@ void idPlayer::Think( void )
 
 	// this may use firstPersonView, or a thirdPerson / camera view
 	CalculateRenderView();
+
+	// VR: the body follows the real head (after the view is known, so the view doesn't jump)
+	if ( renderView ) {
+		vrBody.Update( this, renderView );
+	}
 
 	if ( vrHands.IsActive() ) {
 		// VR: the hands touch and grab things, no view-ray frobbing

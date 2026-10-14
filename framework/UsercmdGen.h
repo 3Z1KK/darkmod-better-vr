@@ -205,6 +205,9 @@ const int UCF_IMPULSE_SEQUENCE	= 0x0001;		// toggled every time an impulse comma
 
 // usercmd_t->vrHandFlags
 const int VR_HAND_TRACKED		= 0x0001;		// hand pose is valid
+// usercmd_t->vrHeadFlags
+const int VR_HEAD_TRACKED		= 0x0001;		// head pose is valid
+const int VR_HEAD_FLOOR			= 0x0002;		// vrHeadFloorZ is valid (the headset knows where the real floor is)
 
 class usercmd_t {
 public:
@@ -237,6 +240,10 @@ public:
 	float		vrHandGrip[2];					// 0..1 grip squeeze
 	float		vrHandTrigger[2];				// 0..1 trigger pull
 	byte		vrHandFlags[2];					// VR_HAND_*
+	idVec3		vrHandLinVel[2];				// controller velocity (units/s, local space)
+	idVec3		vrHandAngVel[2];				// controller angular velocity (rad/s, local space)
+	float		vrHeadFloorZ;					// head height above the real floor (game units)
+	byte		vrHeadFlags;					// VR_HEAD_*
 
 public:
 	void		ByteSwap();						// on big endian systems, byte swap the shorts and ints
