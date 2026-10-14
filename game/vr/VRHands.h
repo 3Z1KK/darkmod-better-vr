@@ -244,3 +244,5 @@ extern idCVar vr_handsEnable;
 float VR_EffectiveMass( idEntity *ent, int bodyId );
 // smaller than the reference vase: weightless in the hand
 bool VR_IsSmallObject( idEntity *ent );
+// how much material (cubic units) an object is made of, from its model; the air inside doesn't count
+float VR_MaterialVolume( idEntity *ent, float boxVolume );

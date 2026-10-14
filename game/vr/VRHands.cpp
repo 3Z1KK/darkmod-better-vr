@@ -27,6 +27,8 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "game/FrobDoor.h"
 #include "game/FrobDoorHandle.h"
 #include "renderer/vr/OpenXRBackend.h"
+#include <unordered_map>
+#include <string>
 
 idCVar vr_handsEnable( "vr_handsEnable", "1", CVAR_GAME | CVAR_BOOL, "VR: interact with the world through tracked hands" );
 idCVar vr_handTouchRadius( "vr_handTouchRadius", "2.5", CVAR_GAME | CVAR_FLOAT, "VR: radius (game units) around the palm that counts as touching" );
@@ -1432,8 +1434,100 @@ float VR_EffectiveMass( idEntity *ent, int bodyId ) {
 	}
 	const idBounds &b = phys->GetBounds( bodyId );
 	const idVec3 size = b[1] - b[0];
-	const float litres = Max( 0.0f, size.x * size.y * size.z ) * 0.01231f;	// 1 unit = 2.309 cm
+	const float boxVolume = Max( 0.0f, size.x * size.y * size.z );
+	// the material, not the air: an empty bucket weighs what its walls weigh
+	const float volume = VR_MaterialVolume( ent, boxVolume );
+	const float litres = volume * 0.01231f;	// 1 unit = 2.309 cm
 	return idMath::ClampFloat( 0.05f, 80.0f, vr_handDensity.GetFloat() * idMath::Pow( litres, vr_handDensityExp.GetFloat() ) );
+}
+
+/*
+ * How much material an object is made of (cubic units), from its visible model, computed once per model:
+ *  - a closed mesh (a rock, a sack, a bucket modelled with thick walls): the volume it encloses
+ *  - an open, single-skin mesh (most buckets, pots, bowls, chairs made of planks): its surface area times
+ *    a wall thickness (vr_handWallThickness)
+ * Never more than the object's box. Animated and missing models use the box.
+ */
+idCVar vr_handWallThickness( "vr_handWallThickness", "0.5", CVAR_GAME | CVAR_FLOAT, "VR: wall thickness (units, 1 unit = 2.3 cm) assumed for open, single-skin models (buckets, bowls) when estimating their weight" );
+idCVar vr_handWeightFromModel( "vr_handWeightFromModel", "1", CVAR_GAME | CVAR_BOOL, "VR: weight from the model's material (ignores the air in buckets, chairs...). 0 = from the bounding box" );
+
+float VR_MaterialVolume( idEntity *ent, float boxVolume ) {
+	if ( !vr_handWeightFromModel.GetBool() || boxVolume <= 0.0f ) {
+		return boxVolume;
+	}
+	const renderEntity_t *re = ent->GetRenderEntity();
+	idRenderModel *model = re != nullptr ? re->hModel : nullptr;
+	if ( model == nullptr || model->IsDefaultModel() || model->IsDynamicModel() != DM_STATIC ) {
+		return boxVolume;
+	}
+
+	struct cached_t { float enclosed; float area; bool closed; };
+	static std::unordered_map<std::string, cached_t> cache;
+	const std::string key = model->Name();
+	auto it = cache.find( key );
+	if ( it == cache.end() ) {
+		cached_t c = { 0.0f, 0.0f, false };
+		// edges between welded positions: a closed mesh has every edge shared by exactly two triangles
+		std::unordered_map<uint64_t, int> edges;
+		std::unordered_map<uint64_t, int> weld;
+		auto posId = [&]( const idVec3 &v ) -> int {
+			const int64_t x = (int64_t)idMath::Floor( v.x * 50.0f + 0.5f );
+			const int64_t y = (int64_t)idMath::Floor( v.y * 50.0f + 0.5f );
+			const int64_t z = (int64_t)idMath::Floor( v.z * 50.0f + 0.5f );
+			const uint64_t h = ( (uint64_t)( x & 0x1fffff ) << 42 ) | ( (uint64_t)( y & 0x1fffff ) << 21 ) | (uint64_t)( z & 0x1fffff );
+			auto w = weld.find( h );
+			if ( w != weld.end() ) {
+				return w->second;
+			}
+			const int id = (int)weld.size();
+			weld[h] = id;
+			return id;
+		};
+		double enclosed = 0.0, area = 0.0;
+		for ( int s = 0; s < model->NumSurfaces(); s++ ) {
+			const modelSurface_t *surf = model->Surface( s );
+			if ( surf == nullptr || surf->geometry == nullptr || surf->geometry->verts == nullptr || surf->geometry->indexes == nullptr ) {
+				continue;
+			}
+			if ( surf->material != nullptr && !surf->material->IsDrawn() ) {
+				continue;	// collision and other invisible surfaces
+			}
+			const srfTriangles_t *tri = surf->geometry;
+			for ( int i = 0; i + 2 < tri->numIndexes; i += 3 ) {
+				const idVec3 &a = tri->verts[tri->indexes[i + 0]].xyz;
+				const idVec3 &b = tri->verts[tri->indexes[i + 1]].xyz;
+				const idVec3 &c3 = tri->verts[tri->indexes[i + 2]].xyz;
+				enclosed += a * b.Cross( c3 ) / 6.0;
+				area += ( b - a ).Cross( c3 - a ).Length() * 0.5;
+				const int ids[3] = { posId( a ), posId( b ), posId( c3 ) };
+				for ( int e = 0; e < 3; e++ ) {
+					const int p = Min( ids[e], ids[( e + 1 ) % 3] ), q = Max( ids[e], ids[( e + 1 ) % 3] );
+					if ( p != q ) {
+						edges[( (uint64_t)p << 32 ) | (uint64_t)q ]++;
+					}
+				}
+			}
+		}
+		int twoSided = 0;
+		for ( const auto &e : edges ) {
+			if ( e.second == 2 ) {
+				twoSided++;
+			}
+		}
+		c.enclosed = (float)idMath::Fabs( (float)enclosed );
+		c.area = (float)area;
+		c.closed = !edges.empty() && twoSided >= (int)( edges.size() * 0.95f );
+		it = cache.emplace( key, c ).first;
+		if ( vr_handsDebug.GetBool() ) {
+			gameLocal.Printf( "VR hands: %s is %s, %.0f cubic units enclosed, %.0f square units of surface\n", key.c_str(), c.closed ? "closed" : "open", c.enclosed, c.area );
+		}
+	}
+	const cached_t &c = it->second;
+	const float material = c.closed ? c.enclosed : c.area * vr_handWallThickness.GetFloat();
+	if ( material <= 0.0f ) {
+		return boxVolume;
+	}
+	return idMath::ClampFloat( boxVolume * 0.01f, boxVolume, material );
 }
 
 /*
