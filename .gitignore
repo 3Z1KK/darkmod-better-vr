@@ -10,3 +10,6 @@ ipch/
 Darkmod.log
 
 ThirdParty/artefacts/
+__pycache__/
+*.pyc
+tools/vr_hands/rig_debug.npy
