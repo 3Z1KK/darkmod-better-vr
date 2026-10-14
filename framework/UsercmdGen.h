@@ -210,6 +210,7 @@ const int VR_HEAD_TRACKED		= 0x0001;		// head pose is valid
 const int VR_HEAD_FLOOR			= 0x0002;		// vrHeadFloorZ is valid (the headset knows where the real floor is)
 // usercmd_t->vrButtons
 const int VR_BUTTON_POUCH		= 0x0001;		// pouch button held (Y on the left controller)
+const int VR_BUTTON_ARROWS		= 0x0002;		// arrow selector button held (B on the right controller)
 
 class usercmd_t {
 public:
@@ -247,6 +248,7 @@ public:
 	float		vrHeadFloorZ;					// head height above the real floor (game units)
 	byte		vrHeadFlags;					// VR_HEAD_*
 	byte		vrButtons;						// VR_BUTTON_*
+	signed char	vrTurnStick;					// the turning stick's left/right (-127..127), also while turning is locked
 
 public:
 	void		ByteSwap();						// on big endian systems, byte swap the shorts and ints

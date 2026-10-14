@@ -24,7 +24,9 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
  *  - The other hand grabbing anywhere on the bow snaps to the middle of the string and draws it: the draw is
  *    how far that hand moves back from where it grabbed. The string gets stiffer and stiffer and can't be
  *    drawn past the bow's maximum. The limbs bend with the draw.
- *  - The right shoulder gives a broadhead arrow (for testing), held at the feather end like a pencil.
+ *  - The right shoulder gives an arrow of the type picked in the arrow selector (VRArrows.h), one less in the
+ *    inventory each time, held at the feather end like a pencil. Arrows let go of at the stomach, or left on
+ *    the bow when it is put away, go back into the inventory.
  *    Touching the bow with it nocks it: the hand snaps to the string with the arrow, which lies between the
  *    string and its rest on the bow and goes back and forth with the string.
  *  - Letting go of the string shoots like the normal game: from the arrow's tip, where it points, with power

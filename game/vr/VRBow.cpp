@@ -39,7 +39,6 @@ idCVar vr_bowDebug( "vr_bowDebug", "0", CVAR_GAME | CVAR_BOOL, "VR: print what t
 
 namespace {
 	const char *BOW_DEF = "atdm:vr_bow";
-	const char *ARROW_DEF = "atdm:vr_arrow_broadhead";
 	// where the string sits in the drawing hand: between the thumb and the index finger tips (hand space)
 	const idVec3 PINCH( 0.6f, 0.0f, -2.6f );
 
@@ -300,9 +299,13 @@ void idVRBow::PutAway( idPlayer *player, idVRHand hands[2] ) {
 		hands[stringHand].EndBowState();
 		stringHand = -1;
 	}
-	// an arrow on the string goes away with the bow
+	// an arrow on the string goes away with the bow, back into the inventory
 	idEntity *arrow = nocked.GetEntity();
 	if ( arrow != nullptr ) {
+		CInventoryWeaponItemPtr weapon = player->GetWeaponItem( arrow->spawnArgs.GetString( "vr_arrow", "broadhead" ) );
+		if ( weapon != nullptr ) {
+			weapon->SetAmmo( weapon->GetAmmo() + 1 );
+		}
 		arrow->Hide();
 		arrow->GetPhysics()->UnlinkClip();
 		arrow->PostEventMS( &EV_Remove, 0 );
@@ -330,15 +333,38 @@ void idVRBow::OnRelease( idPlayer *player, idVRHand hands[2], int handIndex ) {
 	}
 }
 
+/*
+ * An arrow of the type picked in the arrow selector, out of the inventory into the hand. It is the arrow
+ * type's own pickup (its model; let go at the stomach it goes back into the inventory, one arrow).
+ */
 bool idVRBow::SpawnArrow( idPlayer *player, idVRHand &hand ) {
+	const idStr type = player->vrHands.GetArrowSelector().GetSelected( player );
+	CInventoryWeaponItemPtr weapon = type.IsEmpty() ? CInventoryWeaponItemPtr() : player->GetWeaponItem( type );
+	if ( weapon == nullptr || weapon->GetAmmo() <= 0 ) {
+		BowDebug( "no arrows left%s%s", type.IsEmpty() ? "" : " of type ", type.c_str() );
+		return false;
+	}
+	const idDict *weaponDef = gameLocal.FindEntityDefDict( weapon->GetWeaponDefName().c_str(), false );
+	const idStr ammoDef = weaponDef != nullptr ? weaponDef->GetString( "def_ammo", va( "atdm:ammo_%s", type.c_str() ) ) : va( "atdm:ammo_%s", type.c_str() );
+	if ( gameLocal.FindEntityDefDict( ammoDef.c_str(), false ) == nullptr ) {
+		gameLocal.Warning( "VR bow: no arrow def %s", ammoDef.c_str() );
+		return false;
+	}
 	idDict args;
-	args.Set( "classname", ARROW_DEF );
+	args.Set( "classname", ammoDef.c_str() );
+	args.Set( "vr_arrow", type.c_str() );
+	args.Set( "vr_weightless", "1" );
+	args.Set( "grabable", "1" );
+	args.Set( "frobable", "1" );
+	args.Set( "inv_ammo_amount", "1" );		// stored at the stomach it is one arrow again
 	args.SetVector( "origin", hand.GetInput().pos );
 	idEntity *ent = nullptr;
 	if ( !gameLocal.SpawnEntityDef( args, &ent ) || ent == nullptr ) {
-		gameLocal.Warning( "VR bow: could not spawn %s", ARROW_DEF );
+		gameLocal.Warning( "VR bow: could not spawn %s", ammoDef.c_str() );
 		return false;
 	}
+	weapon->UseAmmo( 1 );
+	player->inventoryHUDNeedsUpdate = true;
 	// held near the feather end, pointing out of the fist
 	const idVec3 anchor( 0.0f, 0.0f, ArrowBackZ( ent ) + 3.0f );
 	const idMat3 axis = HAND_IN_ARROW.Transpose() * hand.GetInput().axis;
@@ -411,12 +437,17 @@ bool idVRBow::Shoot( idPlayer *player, idVRHand hands[2] ) {
 		BowDebug( "not drawn enough (%.0f%%), no shot", drawn * 100.0f );
 		return false;
 	}
+	// the arrow type's projectile, as the normal game shoots it (a mission may have changed it)
 	const char *type = arrow->spawnArgs.GetString( "vr_arrow", "broadhead" );
-	const idDict *weaponDef = gameLocal.FindEntityDefDict( va( "atdm:weapon_%s", type ), false );
-	const char *projName = weaponDef != nullptr ? weaponDef->GetString( "def_projectile", "atdm:projectile_broadhead" ) : "atdm:projectile_broadhead";
-	const idDict *projDef = gameLocal.FindEntityDefDict( projName, false );
+	CInventoryWeaponItemPtr weapon = player->GetWeaponItem( type );
+	const idDict *weaponDef = gameLocal.FindEntityDefDict( weapon != nullptr ? weapon->GetWeaponDefName().c_str() : va( "atdm:weapon_%s", type ), false );
+	idStr projName = weapon != nullptr ? weapon->GetProjectileDefName() : idStr();
+	if ( projName.IsEmpty() ) {
+		projName = weaponDef != nullptr ? weaponDef->GetString( "def_projectile", "atdm:projectile_broadhead" ) : "atdm:projectile_broadhead";
+	}
+	const idDict *projDef = gameLocal.FindEntityDefDict( projName.c_str(), false );
 	if ( projDef == nullptr ) {
-		gameLocal.Warning( "VR bow: no projectile %s", projName );
+		gameLocal.Warning( "VR bow: no projectile %s", projName.c_str() );
 		return false;
 	}
 
@@ -454,7 +485,7 @@ bool idVRBow::Shoot( idPlayer *player, idVRHand hands[2] ) {
 		if ( ent != nullptr ) {
 			ent->PostEventMS( &EV_Remove, 0 );
 		}
-		gameLocal.Warning( "VR bow: %s is not a projectile", projName );
+		gameLocal.Warning( "VR bow: %s is not a projectile", projName.c_str() );
 		return false;
 	}
 	idProjectile *proj = static_cast<idProjectile *>( ent );
@@ -463,7 +494,7 @@ bool idVRBow::Shoot( idPlayer *player, idVRHand hands[2] ) {
 	proj->m_SetInMotionByActor = player;
 	player->AddProjectilesFired( 1 );
 	PlaySound( player, "snd_release" );
-	BowDebug( "shot %s at %.0f%% draw: power %.2f, damage x%.2f", projName, drawn * 100.0f, power, dmgScale );
+	BowDebug( "shot %s at %.0f%% draw: power %.2f, damage x%.2f", projName.c_str(), drawn * 100.0f, power, dmgScale );
 	return true;
 }
 

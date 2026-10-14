@@ -1192,6 +1192,7 @@ void idVRHands::Init() {
 	clipRestores.Clear();
 	movers.Clear();
 	bow.Reset();
+	arrowSelector.Reset();
 	lastTime = 0;
 	lastDt = 0.0f;
 	initialized = true;
@@ -1202,6 +1203,7 @@ void idVRHands::Shutdown() {
 		return;
 	}
 	pouch.Free();
+	arrowSelector.Free();
 	bow.Free();
 	if ( crystalHandle != -1 && gameRenderWorld ) {
 		gameRenderWorld->FreeEntityDef( crystalHandle );
@@ -1612,12 +1614,18 @@ void idVRHands::FilterInput( idPlayer *player, usercmd_t &cmd ) {
 		return;
 	}
 	pouch.UpdateInput( player, cmd, hands[0] );
+	arrowSelector.UpdateInput( player, cmd, hands[1] );
 }
 
 bool idVRHands::HandleGripPress( idPlayer *player, int handIndex ) {
 	// the pouch belongs to the left hand: while it is open, the left grip takes the shown item
 	if ( handIndex == 0 && pouch.IsOpen() ) {
 		return pouch.Take( player, hands[0] );
+	}
+	// the arrow selector belongs to the right hand: the right grip picks the shown arrow type
+	if ( handIndex == 1 && arrowSelector.IsOpen() ) {
+		arrowSelector.Confirm( player );
+		return true;
 	}
 	// the bow: the string (anywhere on the held bow), the bow (left shoulder), an arrow (right shoulder)
 	if ( bow.TryGrab( player, hands, handIndex ) ) {
@@ -1720,6 +1728,7 @@ void idVRHands::PostThink( idPlayer *player ) {
 		return;
 	}
 	pouch.UpdatePanel( player, hands[0] );
+	arrowSelector.UpdatePanel( player, hands[1] );
 	hands[0].UpdateVisual( lastDt );
 	hands[1].UpdateVisual( lastDt );
 	bow.UpdateRender( player, hands );

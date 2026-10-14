@@ -248,16 +248,26 @@ void idVRPouch::UpdateInput( idPlayer *player, usercmd_t &cmd, idVRHand &leftHan
 }
 
 void idVRPouch::UpdatePanel( idPlayer *player, const idVRHand &leftHand ) {
-	if ( !open || gameRenderWorld == nullptr || gui == nullptr || !leftHand.IsTracked() ) {
+	if ( !open || gui == nullptr ) {
+		return;
+	}
+	VR_UpdateHandPanel( player, leftHand, gui, panelEntity, panelHandle );
+}
+
+/*
+ * A small 2D panel floating above a hand, turned towards the eyes (the pouch, the arrow selector).
+ */
+void VR_UpdateHandPanel( idPlayer *player, const idVRHand &hand, idUserInterface *gui, renderEntity_t &panelEntity, qhandle_t &panelHandle ) {
+	if ( gameRenderWorld == nullptr || gui == nullptr || !hand.IsTracked() ) {
 		return;
 	}
 	const renderView_t *view = player->GetRenderView();
 	if ( view == nullptr ) {
 		return;
 	}
-	// above the left hand, turned towards the eyes
+	// above the hand, turned towards the eyes
 	const idVec3 eye = player->vrBody.LocalToWorld( view, player->usercmd.vrHeadPos );
-	idVec3 pos = leftHand.GetVisualPos() + idVec3( 0, 0, vr_pouchHeight.GetFloat() );
+	idVec3 pos = hand.GetVisualPos() + idVec3( 0, 0, vr_pouchHeight.GetFloat() );
 	idVec3 toEye = eye - pos;
 	toEye.Normalize();
 	pos += toEye * 1.0f;

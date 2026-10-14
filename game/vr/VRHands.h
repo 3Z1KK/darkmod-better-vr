@@ -20,6 +20,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "VRLocks.h"
 #include "VRMovers.h"
 #include "VRBow.h"
+#include "VRArrows.h"
 
 /*
  * VR hands: the player's only way to touch the world.
@@ -191,6 +192,7 @@ public:
 	// a weightless thing grabbed by one hand: the other hand lets go of it
 	void			TakeOver( idPlayer *player, int handIndex, idEntity *ent );
 	idVRTools &		GetTools() { return tools; }
+	idVRArrowSelector &GetArrowSelector() { return arrowSelector; }
 	// the bow: a hand holding the bow or the string lets go / a hand grabs a bow placed in the map
 	void			BowRelease( idPlayer *player, int handIndex ) { bow.OnRelease( player, hands, handIndex ); }
 	bool			BowTakeWorld( idPlayer *player, int handIndex, idEntity *ent ) { return bow.TakeWorldBow( player, hands, handIndex, ent ); }
@@ -212,6 +214,7 @@ private:
 	idVRPouch		pouch;
 	idVRMovers		movers;
 	idVRBow			bow;
+	idVRArrowSelector arrowSelector;
 	int				calibrateAt = 0;
 	idStr			calibrateMode;
 	idList< idEntityPtr<idEntity> > highlighted;

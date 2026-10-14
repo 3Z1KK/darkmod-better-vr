@@ -41,16 +41,3 @@ entityDef atdm:vr_bow
 	"vr_full_lo_tip"		"-1.12024 -0.00000 0.71972 -0.000000 0.822197 0.000000 0.569202"
 	"vr_full_nock_lo"		"23.38059 0.00000 -0.00000 -0.000000 1.000000 0.000000 0.000846"
 }
-
-// An arrow in the hand (spawned at the right shoulder for now). It is a broadhead pickup: let go at the
-// stomach it goes into the inventory like one. The model points along +z, tip at the origin.
-entityDef atdm:vr_arrow_broadhead
-{
-	"inherit"			"atdm:ammo_broadhead"
-	"editor_usage"		"VR only: a broadhead arrow held in the hand, nocked on the VR bow by touching the bow with it."
-	"editor_displayFolder"	"Internal/VR"
-	"vr_arrow"			"broadhead"		// shot as this arrow weapon's projectile (atdm:weapon_<name>)
-	"vr_weightless"		"1"
-	"grabable"			"1"
-	"frobable"			"1"
-}

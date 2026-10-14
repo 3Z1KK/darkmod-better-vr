@@ -21,7 +21,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
  * left stick left/right flips through the items (the same items the game's inventory shows, without weapons,
  * loot and lockpicks), the left grip takes the shown item out into the left hand (it leaves the inventory),
  * Y again closes it without taking anything. Things are put back by letting go of them at the stomach.
- * The right hand never uses the pouch (it will get its own arrow selection later).
+ * The right hand never uses the pouch; it has the arrow selector (VRArrows.h).
  */
 
 class idPlayer;
@@ -68,3 +68,6 @@ private:
 	qhandle_t		panelHandle = -1;
 	int				grabberWaitUntil = 0;	// drop scripts: wait for the item to show up in the grabber
 };
+
+// a small 2D panel (a GUI) floating above a hand, turned towards the eyes; handle -1 = not added yet
+void VR_UpdateHandPanel( idPlayer *player, const idVRHand &hand, idUserInterface *gui, renderEntity_t &panelEntity, qhandle_t &panelHandle );

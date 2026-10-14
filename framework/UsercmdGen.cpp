@@ -737,6 +737,9 @@ idUsercmdGenLocal::JoystickMove
 */
 idCVar in_padInvertYawAxis( "in_padInvertYawAxis", "0", CVAR_GAME|CVAR_BOOL|CVAR_ARCHIVE, "Invert gamepad yaw axis" );
 idCVar in_padInvertPitchAxis( "in_padInvertPitchAxis", "0", CVAR_GAME|CVAR_BOOL|CVAR_ARCHIVE, "Invert gamepad pitch axis" );
+// VR: set by the game while the turning stick is used for something else (the arrow selector)
+idCVar vr_turnLocked( "vr_turnLocked", "0", CVAR_SYSTEM | CVAR_BOOL | CVAR_NOCHEAT, "VR: (set by the game) the turning stick doesn't turn" );
+
 void idUsercmdGenLocal::JoystickMove( void ) {
 	float	anglespeed;
 
@@ -749,7 +752,11 @@ void idUsercmdGenLocal::JoystickMove( void ) {
 	float yawAngleSpeed = anglespeed * ( in_padInvertYawAxis.GetBool() ? 1 : -1 );
 	float pitchAngleSpeed = anglespeed * ( in_padInvertPitchAxis.GetBool() ? 1 : -1 );
 	viewangles[PITCH] += pitchAngleSpeed * in_pitchSpeed.GetFloat() * joystickAxis[AXIS_PITCH] / 127.f;
-	if ( vr_useMotionControllers.GetBool() && vr_inputSnapTurnInterval.GetInteger() > 0 ) {
+	if ( vr_useMotionControllers.GetBool() && vr_turnLocked.GetBool() ) {
+		// the stick scrolls a selector in the game instead
+		lastTurnDeflection = joystickAxis[AXIS_YAW] >= 100 ? 1 : joystickAxis[AXIS_YAW] <= -100 ? -1 : 0;
+		lastSmoothTurnUsec = Sys_GetTimeMicroseconds();
+	} else if ( vr_useMotionControllers.GetBool() && vr_inputSnapTurnInterval.GetInteger() > 0 ) {
 		int turnDeflection = joystickAxis[AXIS_YAW] >= 100 ? 1 : joystickAxis[AXIS_YAW] <= -100 ? -1 : 0;
 		if ( turnDeflection != lastTurnDeflection ) {
 			viewangles[YAW] += ( in_padInvertYawAxis.GetBool() ? 1 : -1 ) * turnDeflection * vr_inputSnapTurnInterval.GetInteger();
@@ -886,6 +893,7 @@ void idUsercmdGenLocal::MakeCurrent( void ) {
 		cmd.vrHeadFloorZ = poseInput.headFloorZ;
 		cmd.vrHeadFlags = ( poseInput.headTracked ? VR_HEAD_TRACKED : 0 ) | ( poseInput.headFloorValid ? VR_HEAD_FLOOR : 0 );
 		cmd.vrButtons = (byte)poseInput.buttons;
+		cmd.vrTurnStick = idMath::ClampChar( joystickAxis[AXIS_YAW] );
 
 		// check to make sure the angles haven't wrapped
 		if ( viewangles[PITCH] - oldAngles[PITCH] > 90 ) {
