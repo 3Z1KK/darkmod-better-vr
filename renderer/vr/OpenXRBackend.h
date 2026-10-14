@@ -77,6 +77,7 @@ private:
 	bool GetPredictedEyePose( int eye, idVec3 &origin, idQuat &orientation );
 	void AcquireFboAndTexture( eyeView_t eye, FrameBuffer *&fbo, idImage *&texture );
 	idList<idVec2> GetHiddenAreaMask( eyeView_t eye );
+	idVec2 MaskVertexToNdc( int eye, const XrVector2f &v, bool tangentSpace );
 	idVec4 GetVisibleAreaBounds( eyeView_t eye );
 	bool UsesSrgbTextures() const;
 
@@ -93,6 +94,7 @@ private:
 	GLSLProgram *vrMirrorShader = nullptr;
 
 	idList<idVec2> hiddenAreaVerts[2];
+	bool hiddenAreaMeshInitialized = false;
 	GLSLProgram *hiddenAreaMeshShader = nullptr;
 	idVec4 visibleAreaBounds[2];
 

@@ -54,7 +54,7 @@ idCVar vr_comfortVignette("vr_comfortVignette", "0", CVAR_RENDERER|CVAR_BOOL|CVA
 idCVar vr_comfortVignetteRadius("vr_comfortVignetteRadius", "0.6", CVAR_RENDERER|CVAR_FLOAT|CVAR_ARCHIVE, "The radius/size of the comfort vignette" );
 idCVar vr_comfortVignetteCorridor("vr_comfortVignetteCorridor", "0.1", CVAR_RENDERER|CVAR_FLOAT|CVAR_ARCHIVE, "Transition corridor width from black to visible of the comfort vignette" );
 idCVar vr_disableZoomAnimations("vr_disableZoomAnimations", "0", CVAR_RENDERER|CVAR_BOOL|CVAR_ARCHIVE, "If set to 1, any zoom effect will be instant without transitioning animation");
-idCVar vr_useLightScissors("vr_useLightScissors", "1", CVAR_RENDERER|CVAR_BOOL, "Use individual scissor rects per light (helps performance, might lead to incorrect shadows in border cases)");
+idCVar vr_useLightScissors("vr_useLightScissors", "0", CVAR_RENDERER|CVAR_BOOL, "Use individual scissor rects per light (helps performance; currently broken on 2.14, cuts lighting into rectangles)");
 
 extern bool RB_Bloom( bloomCommand_t *cmd );
 extern void RB_CopyRender( const void *data );
@@ -89,7 +89,8 @@ const float OpenXRBackend::MetresToGameUnits = 1.0f / GameUnitsToMetres;
 
 void OpenXRBackend::Init() {
 	InitBackend();
-	InitHiddenAreaMesh();
+	// the lens mask is initialized on the first frame, once the eye FOVs are known
+	hiddenAreaMeshInitialized = false;
 
 	vrMirrorShader = programManager->LoadFromFiles( "vr_mirror", "vr/vr_mirror.vert.glsl", "vr/vr_mirror.frag.glsl" );
 	vrAimIndicatorShader = programManager->LoadFromFiles( "aim_indicator", "vr/aim_indicator.vert.glsl", "vr/aim_indicator.frag.glsl" );
@@ -175,6 +176,11 @@ void OpenXRBackend::RenderStereoView( const frameData_t *frameData ) {
 
 	if ( !BeginFrame() ) {
 		return;
+	}
+
+	if ( !hiddenAreaMeshInitialized && renderViews[0].fov.angleRight > renderViews[0].fov.angleLeft ) {
+		InitHiddenAreaMesh();
+		hiddenAreaMeshInitialized = true;
 	}
 
 	UpdateFrameStatus( frameData );
@@ -523,7 +529,7 @@ void OpenXRBackend::UpdateRenderViewsForEye( const emptyCommand_t *cmds, int eye
 			myGlMultMatrix( modelView.ToFloatPtr(), viewDef->projectionMatrix, aimIndicatorMvp.ToFloatPtr() );
 		}
 
-		if ( vr_useHiddenAreaMesh.GetBool() ) {
+		if ( vr_useHiddenAreaMesh.GetBool() && hiddenAreaMeshInitialized ) {
 			idScreenRect visibleAreaScissor;
 			visibleAreaScissor.x1 = visibleAreaBounds[eye][0] * glConfig.vidWidth;
 			visibleAreaScissor.y1 = visibleAreaBounds[eye][1] * glConfig.vidHeight;
@@ -1170,6 +1176,35 @@ void OpenXRBackend::AcquireFboAndTexture( eyeView_t eye, FrameBuffer *&fbo, idIm
 	}
 }
 
+/*
+ * The OpenXR spec defines visibility mask vertices in view space on the z=-1 plane (i.e. as view angle tangents).
+ * Older SteamVR versions returned [0,1] texture coordinates instead. Values outside [0,1] can only come from the
+ * spec-conformant variant, so use that to decide, then convert to normalized device coordinates for this eye.
+ */
+idVec2 OpenXRBackend::MaskVertexToNdc( int eye, const XrVector2f &v, bool tangentSpace ) {
+	if ( !tangentSpace ) {
+		return idVec2( v.x * 2 - 1, v.y * 2 - 1 );
+	}
+	const XrFovf &fov = renderViews[eye].fov;
+	const float tanL = idMath::Tan( fov.angleLeft ), tanR = idMath::Tan( fov.angleRight );
+	const float tanD = idMath::Tan( fov.angleDown ), tanU = idMath::Tan( fov.angleUp );
+	return idVec2(
+		( 2 * v.x - ( tanR + tanL ) ) / ( tanR - tanL ),
+		( 2 * v.y - ( tanU + tanD ) ) / ( tanU - tanD )
+	);
+}
+
+namespace {
+	bool VR_MaskUsesTangentSpace( const idList<XrVector2f> &vertices ) {
+		for ( const XrVector2f &v : vertices ) {
+			if ( v.x < -0.001f || v.y < -0.001f || v.x > 1.001f || v.y > 1.001f ) {
+				return true;
+			}
+		}
+		return false;
+	}
+}
+
 idList<idVec2> OpenXRBackend::GetHiddenAreaMask( eyeView_t eye ) {
 	if ( !XR_KHR_visibility_mask_available ) {
 		return idList<idVec2>();
@@ -1208,10 +1243,11 @@ idList<idVec2> OpenXRBackend::GetHiddenAreaMask( eyeView_t eye ) {
 		return idList<idVec2>();
 	}
 
+	const bool tangentSpace = VR_MaskUsesTangentSpace( vertices );
+	common->Printf( "VR: hidden area mask for eye %d: %d vertices, %s coordinates\n", (int)eye, vertices.Num(), tangentSpace ? "view space" : "texture" );
 	idList<idVec2> hiddenAreaMask;
 	for ( uint32_t index : indices ) {
-		idVec2 v ( vertices[index].x * 2 - 1, vertices[index].y * 2 - 1 );
-		hiddenAreaMask.AddGrow( v );
+		hiddenAreaMask.AddGrow( MaskVertexToNdc( eye, vertices[index], tangentSpace ) );
 	}
 
 	return hiddenAreaMask;
@@ -1255,13 +1291,21 @@ idVec4 OpenXRBackend::GetVisibleAreaBounds( eyeView_t eye ) {
 		return idVec4( 0, 0, 1, 1 );
 	}
 
+	const bool tangentSpace = VR_MaskUsesTangentSpace( vertices );
 	idVec4 bounds (1, 1, 0, 0);
 	for ( uint32_t index : indices ) {
-		bounds[0] = Min( bounds[0], vertices[index].x );
-		bounds[1] = Min( bounds[1], vertices[index].y );
-		bounds[2] = Max( bounds[2], vertices[index].x );
-		bounds[3] = Max( bounds[3], vertices[index].y );
+		// convert to [0,1] screen fractions
+		idVec2 ndc = MaskVertexToNdc( eye, vertices[index], tangentSpace );
+		idVec2 uv( idMath::ClampFloat( 0, 1, 0.5f * ( ndc.x + 1 ) ), idMath::ClampFloat( 0, 1, 0.5f * ( ndc.y + 1 ) ) );
+		bounds[0] = Min( bounds[0], uv.x );
+		bounds[1] = Min( bounds[1], uv.y );
+		bounds[2] = Max( bounds[2], uv.x );
+		bounds[3] = Max( bounds[3], uv.y );
 	}
+	if ( bounds[2] <= bounds[0] || bounds[3] <= bounds[1] ) {
+		return idVec4( 0, 0, 1, 1 );
+	}
+	common->Printf( "VR: visible area for eye %d: %.3f %.3f - %.3f %.3f\n", (int)eye, bounds[0], bounds[1], bounds[2], bounds[3] );
 
 	return bounds;
 	
