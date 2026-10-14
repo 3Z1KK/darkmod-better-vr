@@ -614,8 +614,8 @@ void idVRHand::HoldEntity( idPlayer *player, idEntity *ent, int bodyId, const id
 	slipTime = 0;
 	carryFromPouch = false;
 	carryKinematic = false;
-	if ( CanHold( ent ) && idVRLockUse::IsWeightless( ent ) ) {
-		// weightless (tools, keys, lockpicks): follows the hand exactly, like a coin
+	if ( CanHold( ent ) && ( idVRLockUse::IsWeightless( ent ) || VR_IsSmallObject( ent ) ) ) {
+		// weightless (tools, keys, lockpicks, anything smaller than a vase): follows the hand exactly, like a coin
 		carryRelAxis = handAxisInBody.Transpose();
 		carryRelOrigin = controllerOffset - anchor * carryRelAxis;
 		carryHomeOrigin = ent->GetPhysics()->GetOrigin();
@@ -654,6 +654,11 @@ void idVRHand::StartInteraction( idPlayer *player ) {
 		return;
 	}
 
+	// a bow placed in the map turns into the VR bow
+	if ( idVRBow::IsWorldBow( ent ) && player->vrHands.BowTakeWorld( player, index, ent ) ) {
+		return;
+	}
+
 	if ( idVRTools::IsTool( ent ) && CanHold( ent ) ) {
 		// a dropped tool: back into its fixed grip
 		idVec3 anchor;
@@ -663,11 +668,13 @@ void idVRHand::StartInteraction( idPlayer *player ) {
 		return;
 	}
 
-	if ( idVRLockUse::IsWeightless( ent ) && CanHold( ent ) ) {
-		// a key or lockpick: held exactly where the hand touched it, weightless
+	if ( ( idVRLockUse::IsWeightless( ent ) || VR_IsSmallObject( ent ) ) && CanHold( ent ) ) {
+		// a key, lockpick or anything smaller than a vase: held exactly where the hand touched it, weightless
 		const idVec3 bodyOrigin = ent->GetPhysics()->GetOrigin();
 		const idMat3 bodyAxisT = ent->GetPhysics()->GetAxis().Transpose();
 		HoldEntity( player, ent, 0, ( physPos - bodyOrigin ) * bodyAxisT, input.axis * bodyAxisT, ( physPos - input.pos ) * input.axis.Transpose() );
+		// weightless things are in one hand only: grabbing it with the other hand takes it over
+		player->vrHands.TakeOver( player, index, ent );
 		return;
 	}
 
@@ -745,6 +752,14 @@ void idVRHand::Release( idPlayer *player, bool allowInventory ) {
 	interaction = IK_NONE;
 	held = nullptr;
 
+	if ( kind == IK_BOW || kind == IK_STRING ) {
+		// the bow goes back to the shoulder / the string is let go (shot)
+		physPos = visualPos;
+		physValid = true;
+		player->vrHands.BowRelease( player, index );
+		return;
+	}
+
 	if ( ent == nullptr ) {
 		return;
 	}
@@ -797,8 +812,9 @@ void idVRHand::Release( idPlayer *player, bool allowInventory ) {
 			phys->Activate();
 			phys->SetLinearVelocity( input.vel );
 			phys->SetAngularVelocity( input.angVel );
-			player->vrHands.ReleaseNonSolidToPlayer( ent, false );
 		}
+		// every hand that took it gives its share back (solid again once nobody holds it)
+		player->vrHands.ReleaseNonSolidToPlayer( ent, false );
 		HandsDebug( "hand %d lets go of %s", index, ent->name.c_str() );
 		return;
 	}
@@ -817,14 +833,44 @@ void idVRHand::Release( idPlayer *player, bool allowInventory ) {
 		ent->SetAxis( carryHomeAxis );
 	}
 
-	if ( !otherHolds ) {
-		player->vrHands.ReleaseNonSolidToPlayer( ent, false );
-	}
+	// every hand that took it gives its share back (solid again once nobody holds it)
+	player->vrHands.ReleaseNonSolidToPlayer( ent, false );
 	if ( kind == IK_HOLD ) {
 		// the object keeps the motion the hand gave it last frame (it was moving with the controller)
 		HandsDebug( "hand %d lets go of %s at %.0f units/s", index, ent->name.c_str(), ent->GetPhysics()->GetLinearVelocity( heldBodyId ).Length() );
 	} else {
 		HandsDebug( "hand %d releases %s", index, ent->name.c_str() );
+	}
+}
+
+/*
+ * Bow states (idVRBow decides when): the hand holds the bow, or is on its string. Nothing else is held then;
+ * an arrow that is nocked belongs to the bow (it is placed by the bow every tick).
+ */
+void idVRHand::BeginBow() {
+	interaction = IK_BOW;
+	held = nullptr;
+	carryKinematic = false;
+	carryFromPouch = false;
+	touched = nullptr;
+}
+
+void idVRHand::BeginString( idEntity *arrow ) {
+	interaction = IK_STRING;
+	held = arrow;
+	carryKinematic = false;
+	carryFromPouch = false;
+	touched = nullptr;
+	overridePos = input.pos;
+	overrideAxis = input.axis;
+}
+
+void idVRHand::EndBowState() {
+	if ( interaction == IK_BOW || interaction == IK_STRING ) {
+		physPos = visualPos;
+		physValid = true;
+		interaction = IK_NONE;
+		held = nullptr;
 	}
 }
 
@@ -900,6 +946,20 @@ void idVRHand::UpdateFingers( float dt ) {
 	idEntity *ent = held.GetEntity();
 	if ( ( interaction == IK_HOLD || interaction == IK_CARRY ) && ent != nullptr ) {
 		glove.FindContactCurls( ent->GetPhysics()->GetClipModel( interaction == IK_HOLD ? heldBodyId : 0 ), 85.0f, targets );
+	} else if ( interaction == IK_BOW ) {
+		// a fist around the bow's grip
+		targets[idVRHandModel::THUMB] = 40.0f;
+		targets[idVRHandModel::INDEX] = 72.0f;
+		targets[idVRHandModel::MIDDLE] = 75.0f;
+		targets[idVRHandModel::RING] = 78.0f;
+		targets[idVRHandModel::PINKY] = 80.0f;
+	} else if ( interaction == IK_STRING ) {
+		// the string pinched between thumb and index finger, the other fingers tucked away
+		targets[idVRHandModel::THUMB] = 45.0f;
+		targets[idVRHandModel::INDEX] = 55.0f;
+		targets[idVRHandModel::MIDDLE] = 60.0f;
+		targets[idVRHandModel::RING] = 85.0f;
+		targets[idVRHandModel::PINKY] = 88.0f;
 	} else if ( interaction == IK_MOVER && moverPart.GetEntity() != nullptr ) {
 		glove.FindContactCurls( moverPart.GetEntity()->GetPhysics()->GetClipModel(), 85.0f, targets );
 	} else if ( interaction == IK_FROB ) {
@@ -930,8 +990,14 @@ void idVRHand::UpdateVisual( float dt ) {
 			GetGripWorld( visualPos, visualAxis );
 			break;
 		case IK_CARRY:
+		case IK_BOW:
 			visualPos = input.pos;
 			visualAxis = input.axis;
+			break;
+		case IK_STRING:
+			// on the bow's string
+			visualPos = overridePos;
+			visualAxis = overrideAxis;
 			break;
 		default:
 			visualPos = physValid ? physPos : input.pos;
@@ -963,7 +1029,7 @@ void idVRHand::Update( idPlayer *player, const vrHandInput_t &in, float dt ) {
 	const interactionKind_t interactionBefore = interaction;
 
 	// free hands are stopped by the world
-	if ( interaction != IK_HOLD && interaction != IK_MOVER ) {
+	if ( interaction != IK_HOLD && interaction != IK_MOVER && interaction != IK_BOW && interaction != IK_STRING ) {
 		MoveFreeHand( player );
 	}
 
@@ -1125,6 +1191,7 @@ void idVRHands::Init() {
 	highlighted.Clear();
 	clipRestores.Clear();
 	movers.Clear();
+	bow.Reset();
 	lastTime = 0;
 	lastDt = 0.0f;
 	initialized = true;
@@ -1135,6 +1202,7 @@ void idVRHands::Shutdown() {
 		return;
 	}
 	pouch.Free();
+	bow.Free();
 	if ( crystalHandle != -1 && gameRenderWorld ) {
 		gameRenderWorld->FreeEntityDef( crystalHandle );
 	}
@@ -1290,6 +1358,59 @@ void idVRHands::UpdateHighlights() {
 			p = e;
 			highlighted.Append( p );
 		}
+	}
+}
+
+/*
+ * Small things are weightless in the hand. "Small" is measured against a reference object, a vase
+ * (vr_weightlessReference, an entity def): anything with less volume than its model, and not much longer
+ * than it, follows the hand exactly like a coin (spoons, candlesticks, bottles, books...). As big as the vase
+ * or bigger keeps the weighted handling. Bodies always keep it.
+ */
+idCVar vr_weightlessReference( "vr_weightlessReference", "atdm:moveable_vase1", CVAR_GAME, "VR: entity def whose size decides what is weightless in the hand: smaller things are, as big or bigger keep their weight" );
+idCVar vr_weightlessLengthFactor( "vr_weightlessLengthFactor", "1.5", CVAR_GAME | CVAR_FLOAT, "VR: weightless things also have to be shorter than the reference object's longest side times this" );
+
+bool VR_IsSmallObject( idEntity *ent ) {
+	if ( ent == nullptr || ( !ent->IsType( idMoveable::Type ) && !ent->IsType( idMoveableItem::Type ) ) ) {
+		return false;
+	}
+	static idStr refName;
+	static float refVolume = 0.0f;
+	static float refLongest = 0.0f;
+	if ( refName != vr_weightlessReference.GetString() || refVolume <= 0.0f ) {
+		refName = vr_weightlessReference.GetString();
+		// fallback: a vase about 37 cm tall and 18 cm wide
+		idVec3 size( 8.0f, 8.0f, 16.0f );
+		const idDict *def = gameLocal.FindEntityDefDict( refName.c_str(), false );
+		if ( def != nullptr ) {
+			const char *modelName = def->GetString( "clipmodel", def->GetString( "model" ) );
+			idRenderModel *model = modelName[0] ? renderModelManager->CheckModel( modelName ) : nullptr;
+			if ( model == nullptr && modelName[0] ) {
+				model = renderModelManager->FindModel( modelName );
+			}
+			if ( model != nullptr && !model->IsDefaultModel() ) {
+				const idBounds b = model->Bounds();
+				if ( !b.IsCleared() && ( b[1] - b[0] ).x > 0.0f ) {
+					size = b[1] - b[0];
+				}
+			}
+		}
+		refVolume = size.x * size.y * size.z;
+		refLongest = Max( size.x, Max( size.y, size.z ) );
+		gameLocal.Printf( "VR hands: weightless below %s (%.1f x %.1f x %.1f units)\n", refName.c_str(), size.x, size.y, size.z );
+	}
+	const idBounds &b = ent->GetPhysics()->GetBounds();
+	const idVec3 size = b[1] - b[0];
+	const float volume = size.x * size.y * size.z;
+	const float longest = Max( size.x, Max( size.y, size.z ) );
+	return volume < refVolume && longest < refLongest * vr_weightlessLengthFactor.GetFloat();
+}
+
+void idVRHands::TakeOver( idPlayer *player, int handIndex, idEntity *ent ) {
+	idVRHand &other = hands[1 - handIndex];
+	if ( other.GetHeld() == ent && other.GetInteraction() == idVRHand::IK_CARRY ) {
+		other.stomachRelease = false;
+		other.Release( player, false );
 	}
 }
 
@@ -1472,6 +1593,8 @@ void idVRHands::Update( idPlayer *player ) {
 	}
 	// doors, lids and drawers: after the hands said where they want them
 	movers.Update( dt );
+	// the bow: nocking, drawing, the arrow on the string
+	bow.Update( player, hands, dt );
 
 	tools.Update( player, dt );
 	pouch.UpdatePendingGrabberItem( player, hands[0] );
@@ -1495,6 +1618,10 @@ bool idVRHands::HandleGripPress( idPlayer *player, int handIndex ) {
 	// the pouch belongs to the left hand: while it is open, the left grip takes the shown item
 	if ( handIndex == 0 && pouch.IsOpen() ) {
 		return pouch.Take( player, hands[0] );
+	}
+	// the bow: the string (anywhere on the held bow), the bow (left shoulder), an arrow (right shoulder)
+	if ( bow.TryGrab( player, hands, handIndex ) ) {
+		return true;
 	}
 	// an empty hand that touches nothing may be at a holster
 	if ( hands[handIndex].GetTouched() == nullptr ) {
@@ -1595,6 +1722,7 @@ void idVRHands::PostThink( idPlayer *player ) {
 	pouch.UpdatePanel( player, hands[0] );
 	hands[0].UpdateVisual( lastDt );
 	hands[1].UpdateVisual( lastDt );
+	bow.UpdateRender( player, hands );
 	UpdateLightCrystal( player );
 }
 

@@ -28,6 +28,10 @@ idCVar vr_holsterHipSide( "vr_holsterHipSide", "7.5", CVAR_GAME | CVAR_FLOAT | C
 idCVar vr_holsterHipForward( "vr_holsterHipForward", "1.5", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE, "VR: hip holsters, distance in front of the head (units)" );
 idCVar vr_holsterHipRadius( "vr_holsterHipRadius", "7", CVAR_GAME | CVAR_FLOAT, "VR: hip holster reach radius (units)" );
 idCVar vr_holsterWristRadius( "vr_holsterWristRadius", "4.5", CVAR_GAME | CVAR_FLOAT, "VR: wrist (lockpick) holster reach radius (units)" );
+idCVar vr_holsterShoulderDrop( "vr_holsterShoulderDrop", "10", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE, "VR: shoulder holsters (bow, arrows), distance below the head (units, 1 unit = 2.3 cm)" );
+idCVar vr_holsterShoulderSide( "vr_holsterShoulderSide", "7", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE, "VR: shoulder holsters, distance to the side of the body centre (units)" );
+idCVar vr_holsterShoulderForward( "vr_holsterShoulderForward", "-2", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE, "VR: shoulder holsters, distance in front of the head (negative = behind)" );
+idCVar vr_holsterShoulderRadius( "vr_holsterShoulderRadius", "6.5", CVAR_GAME | CVAR_FLOAT, "VR: shoulder holster reach radius (units)" );
 idCVar vr_holsterBodyTurn( "vr_holsterBodyTurn", "40", CVAR_GAME | CVAR_FLOAT, "VR: how far (degrees) the head can turn before the body (and the hip holsters) turns with it" );
 
 namespace {
@@ -115,6 +119,27 @@ bool idVRTools::GetHolsterPos( idPlayer *player, int slot, const idVRHand &other
 		pos = otherHand.GetVisualPos() + idVec3( 0.0f, 0.0f, 5.0f ) * otherHand.GetVisualAxis();
 	}
 	return true;
+}
+
+bool idVRTools::GetShoulderPos( idPlayer *player, bool left, idVec3 &pos ) const {
+	const renderView_t *view = player->GetRenderView();
+	if ( view == nullptr || !bodyYawValid ) {
+		return false;
+	}
+	float sy, cy;
+	idMath::SinCos( DEG2RAD( bodyYaw ), sy, cy );
+	const idVec3 forward( cy, sy, 0.0f );
+	const idVec3 leftDir( -sy, cy, 0.0f );
+	idVec3 local = player->usercmd.vrHeadPos;
+	local += forward * vr_holsterShoulderForward.GetFloat();
+	local += leftDir * ( left ? 1.0f : -1.0f ) * vr_holsterShoulderSide.GetFloat();
+	local.z -= vr_holsterShoulderDrop.GetFloat();
+	pos = player->vrBody.LocalToWorld( view, local );
+	return true;
+}
+
+float idVRTools::GetShoulderRadius() {
+	return vr_holsterShoulderRadius.GetFloat();
 }
 
 bool idVRTools::HasTool( idPlayer *player, int slot ) const {

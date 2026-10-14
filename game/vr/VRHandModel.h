@@ -61,9 +61,12 @@ public:
 
 	void			FillRenderEntity( renderEntity_t &re ) const;
 
+	// where the glove model sits for a controller grip pose (calibration offset applied); things held in a
+	// fixed grip (the bow) use the same space
+	void			ModelTransform( const idVec3 &gripOrigin, const idMat3 &gripAxis, idVec3 &origin, idMat3 &axis ) const;
+
 private:
 	void			ComputeJoints( const float curls[NUM_FINGERS], idJointMat *out ) const;
-	void			ModelTransform( const idVec3 &gripOrigin, const idMat3 &gripAxis, idVec3 &origin, idMat3 &axis ) const;
 
 	int				hand = 0;
 	idRenderModel *	model = nullptr;

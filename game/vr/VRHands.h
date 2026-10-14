@@ -19,6 +19,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "VRPouch.h"
 #include "VRLocks.h"
 #include "VRMovers.h"
+#include "VRBow.h"
 
 /*
  * VR hands: the player's only way to touch the world.
@@ -65,6 +66,8 @@ public:
 		IK_CARRY,		// kinematically carried (static inventory items)
 		IK_FROB,		// generic frob action while grip is squeezed
 		IK_MOVER,		// a door, lid, drawer... held at a point and moved along its path
+		IK_BOW,			// holding the VR bow (see VRBow.h)
+		IK_STRING,		// drawing the VR bow's string (held = the nocked arrow, if any)
 	};
 
 	// how the hand grips the held body, in the body's own space (for holding now, and finger posing later)
@@ -98,6 +101,13 @@ public:
 
 	// take an entity into this hand with a given grip (tools, items from the pouch)
 	void			HoldEntity( idPlayer *player, idEntity *ent, int bodyId, const idVec3 &anchor, const idMat3 &handAxisInBody, const idVec3 &controllerOffset );
+
+	// the bow (idVRBow drives these): holding the bow, on the string (with the nocked arrow), back to empty
+	void			BeginBow();
+	void			BeginString( idEntity *arrow );
+	void			EndBowState();
+	// where the hand is drawn while it is on the string
+	void			SetVisualOverride( const idVec3 &pos, const idMat3 &axis ) { overridePos = pos; overrideAxis = axis; }
 
 	// where the controller wants the grip point to be
 	idVec3			GetGripTarget() const;
@@ -142,6 +152,8 @@ private:
 	bool			carryKinematic = false;		// a weightless physics object (tool, key) that follows the hand exactly
 	idVRLockUse		lockUse;					// a key or lockpick being used on a lock (trigger held)
 	idEntityPtr<idEntity> moverPart;			// IK_MOVER: the part the hand holds (the handle, or the mover itself)
+	idVec3			overridePos = vec3_zero;	// IK_STRING: where the hand is drawn (on the string)
+	idMat3			overrideAxis = mat3_identity;
 	bool			latchHeld = false;			// IK_MOVER: trigger holds the handle down, the latch is open
 	void			PressHandle( bool down );
 
@@ -176,6 +188,12 @@ public:
 	int				CountHolding( const idEntity *ent ) const;
 	// doors, lids, drawers moved by hand
 	idVRMovers &	GetMovers() { return movers; }
+	// a weightless thing grabbed by one hand: the other hand lets go of it
+	void			TakeOver( idPlayer *player, int handIndex, idEntity *ent );
+	idVRTools &		GetTools() { return tools; }
+	// the bow: a hand holding the bow or the string lets go / a hand grabs a bow placed in the map
+	void			BowRelease( idPlayer *player, int handIndex ) { bow.OnRelease( player, hands, handIndex ); }
+	bool			BowTakeWorld( idPlayer *player, int handIndex, idEntity *ent ) { return bow.TakeWorldBow( player, hands, handIndex, ent ); }
 
 	// held objects don't collide with the player; after release they become solid again once they stop overlapping
 	void			MakeNonSolidToPlayer( idEntity *ent );
@@ -193,6 +211,7 @@ private:
 	idVRTools		tools;
 	idVRPouch		pouch;
 	idVRMovers		movers;
+	idVRBow			bow;
 	int				calibrateAt = 0;
 	idStr			calibrateMode;
 	idList< idEntityPtr<idEntity> > highlighted;
@@ -220,3 +239,5 @@ extern idCVar vr_handsEnable;
 
 // how heavy an object feels in the hands (estimated from its size, not the game's mass)
 float VR_EffectiveMass( idEntity *ent, int bodyId );
+// smaller than the reference vase: weightless in the hand
+bool VR_IsSmallObject( idEntity *ent );

@@ -21,6 +21,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
  *   blackjack   right hip
  *   lockpicks   one in each wrist cuff (triangle in the left cuff, snake in the right one),
  *               pulled out by the other hand
+ *   bow         left shoulder, arrows right shoulder (see VRBow.h)
  *
  * Reaching to a holster with an empty hand and squeezing the grip makes the tool appear in the hand,
  * snapped into its grip (the sword is always held by the hilt). Tools are weightless. Letting go returns
@@ -58,6 +59,9 @@ public:
 
 	// for the calibration / debugging: where a holster is in the world
 	bool			GetHolsterPos( idPlayer *player, int slot, const idVRHand &otherHand, idVec3 &pos ) const;
+	// the shoulders (bow on the left one, arrows on the right one), and how close a hand has to be
+	bool			GetShoulderPos( idPlayer *player, bool left, idVec3 &pos ) const;
+	static float	GetShoulderRadius();
 
 private:
 	bool			HasTool( idPlayer *player, int slot ) const;
