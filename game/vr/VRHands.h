@@ -186,3 +186,6 @@ private:
 };
 
 extern idCVar vr_handsEnable;
+
+// how heavy an object feels in the hands (estimated from its size, not the game's mass)
+float VR_EffectiveMass( idEntity *ent, int bodyId );

@@ -56,3 +56,4 @@ private:
 };
 
 extern idCVar vr_roomscale;
+extern idCVar vr_bodyWidth;

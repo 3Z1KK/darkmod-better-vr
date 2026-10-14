@@ -27,6 +27,7 @@ idCVar vr_crouchDrop( "vr_crouchDrop", "14", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHI
 idCVar vr_roomStepCreepSpeed( "vr_roomStepCreepSpeed", "30", CVAR_GAME | CVAR_FLOAT, "VR: real-life walking faster than this (units/s) makes quiet (creep) footsteps, slower is silent" );
 idCVar vr_roomStepWalkSpeed( "vr_roomStepWalkSpeed", "65", CVAR_GAME | CVAR_FLOAT, "VR: real-life walking faster than this (units/s) makes normal walking footsteps" );
 idCVar vr_roomStepStride( "vr_roomStepStride", "28", CVAR_GAME | CVAR_FLOAT, "VR: real-life distance (units) per footstep" );
+idCVar vr_bodyWidth( "vr_bodyWidth", "18", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE, "VR: width of the player's collision body in VR (units; the normal game uses pm_bboxwidth 32). Applies on map load" );
 idCVar vr_headInWallFade( "vr_headInWallFade", "1", CVAR_GAME | CVAR_BOOL, "VR: fade to black when the real head moves into a wall" );
 
 void idVRBody::Reset() {

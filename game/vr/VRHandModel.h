@@ -31,6 +31,12 @@ class idVRHandModel {
 public:
 	enum { THUMB, INDEX, MIDDLE, RING, PINKY, NUM_FINGERS };
 
+	struct touchPoint_t {
+		idVec3		pos;
+		float		radius;
+		bool		palm;
+	};
+
 	~idVRHandModel();
 
 	bool			Init( int handIndex );		// false if the model is missing
@@ -49,10 +55,14 @@ public:
 	bool			GetJointWorld( int joint, idVec3 &pos, idMat3 &axis ) const;
 	int				GetRingSocket() const { return ringSocket; }
 
+	// spheres covering the palm and the (currently curled) fingers, for a hand at the given grip pose
+	void			GetTouchPoints( const idVec3 &gripOrigin, const idMat3 &gripAxis, idList<touchPoint_t> &out ) const;
+
 	void			FillRenderEntity( renderEntity_t &re ) const;
 
 private:
 	void			ComputeJoints( const float curls[NUM_FINGERS], idJointMat *out ) const;
+	void			ModelTransform( const idVec3 &gripOrigin, const idMat3 &gripAxis, idVec3 &origin, idMat3 &axis ) const;
 
 	int				hand = 0;
 	idRenderModel *	model = nullptr;
@@ -63,6 +73,7 @@ private:
 	int				fingerJoints[NUM_FINGERS][3];
 	float			fingerTip[NUM_FINGERS];		// distal phalanx length (model units)
 	int				ringSocket = -1;
+	int				handJoint = -1;
 	float			curl[NUM_FINGERS] = {};
 	idVec3			modelOrigin = vec3_zero;
 	idMat3			modelAxis = mat3_identity;

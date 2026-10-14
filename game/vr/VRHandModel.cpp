@@ -95,6 +95,7 @@ bool idVRHandModel::Init( int handIndex ) {
 		curl[f] = 10.0f;
 	}
 	ringSocket = find( "ring_socket" );
+	handJoint = find( "hand" );
 	jointMats = (idJointMat *)Mem_Alloc16( numJoints * sizeof( idJointMat ) );
 	scratchMats = (idJointMat *)Mem_Alloc16( numJoints * sizeof( idJointMat ) );
 	model = m;
@@ -103,6 +104,10 @@ bool idVRHandModel::Init( int handIndex ) {
 }
 
 void idVRHandModel::SetPose( const idVec3 &gripOrigin, const idMat3 &gripAxis ) {
+	ModelTransform( gripOrigin, gripAxis, modelOrigin, modelAxis );
+}
+
+void idVRHandModel::ModelTransform( const idVec3 &gripOrigin, const idMat3 &gripAxis, idVec3 &origin, idMat3 &axis ) const {
 	idVec3 offset( 0, 0, 0 );
 	idAngles angles( 0, 0, 0 );
 	sscanf( vr_handModelOffset.GetString(), "%f %f %f", &offset.x, &offset.y, &offset.z );
@@ -113,8 +118,41 @@ void idVRHandModel::SetPose( const idVec3 &gripOrigin, const idMat3 &gripAxis ) 
 		angles.yaw = -angles.yaw;
 		angles.roll = -angles.roll;
 	}
-	modelAxis = angles.ToMat3() * gripAxis;
-	modelOrigin = gripOrigin + offset * gripAxis;
+	axis = angles.ToMat3() * gripAxis;
+	origin = gripOrigin + offset * gripAxis;
+}
+
+void idVRHandModel::GetTouchPoints( const idVec3 &gripOrigin, const idMat3 &gripAxis, idList<touchPoint_t> &out ) const {
+	out.Clear();
+	if ( !IsValid() ) {
+		return;
+	}
+	idVec3 origin;
+	idMat3 axis;
+	ModelTransform( gripOrigin, gripAxis, origin, axis );
+	auto add = [&]( const idVec3 &modelPos, float radius, bool palm ) {
+		touchPoint_t p;
+		p.pos = origin + modelPos * axis;
+		p.radius = radius;
+		p.palm = palm;
+		out.Append( p );
+	};
+	// palm: between the wrist and the middle knuckle, on the palm side
+	if ( handJoint >= 0 ) {
+		const idJointMat &hj = jointMats[handJoint];
+		const idVec3 knuckle = jointMats[fingerJoints[MIDDLE][0]].ToVec3();
+		add( ( hj.ToVec3() + knuckle ) * 0.5f - hj.ToMat3()[2] * 0.5f, 1.5f, true );
+	}
+	// fingers: middle of each phalanx and the finger tip
+	for ( int f = 0; f < NUM_FINGERS; f++ ) {
+		const idJointMat &j1 = jointMats[fingerJoints[f][0]];
+		const idJointMat &j2 = jointMats[fingerJoints[f][1]];
+		const idJointMat &j3 = jointMats[fingerJoints[f][2]];
+		const float r = f == THUMB ? 0.55f : 0.5f;
+		add( ( j1.ToVec3() + j2.ToVec3() ) * 0.5f, r, false );
+		add( ( j2.ToVec3() + j3.ToVec3() ) * 0.5f, r, false );
+		add( j3.ToVec3() + j3.ToMat3()[0] * ( fingerTip[f] * 0.6f ), r, false );
+	}
 }
 
 void idVRHandModel::ComputeJoints( const float curls[NUM_FINGERS], idJointMat *out ) const {

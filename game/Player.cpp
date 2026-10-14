@@ -5649,8 +5649,10 @@ void idPlayer::SetClipModel( void ) {
 	if ( spectating ) {
 		bounds = idBounds( vec3_origin ).Expand( pm_spectatebbox.GetFloat() * 0.5f );
 	} else {
-		bounds[0].Set( -pm_bboxwidth.GetFloat() * 0.5f, -pm_bboxwidth.GetFloat() * 0.5f, 0 );
-		bounds[1].Set( pm_bboxwidth.GetFloat() * 0.5f, pm_bboxwidth.GetFloat() * 0.5f, pm_normalheight.GetFloat() );
+		// VR: a narrower body, so the real head can get as close to tables and walls as in real life
+		const float width = vr_useMotionControllers.GetBool() ? vr_bodyWidth.GetFloat() : pm_bboxwidth.GetFloat();
+		bounds[0].Set( -width * 0.5f, -width * 0.5f, 0 );
+		bounds[1].Set( width * 0.5f, width * 0.5f, pm_normalheight.GetFloat() );
 	}
 	// the origin of the clip model needs to be set before calling SetClipModel
 	// otherwise our physics object's current origin value gets reset to 0
