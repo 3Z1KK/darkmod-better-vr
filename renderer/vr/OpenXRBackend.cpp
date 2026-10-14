@@ -71,6 +71,18 @@ namespace {
 	}
 }
 
+namespace {
+	// draws a full screen quad outside of any view. RB_DrawFullScreenQuad expects a valid backEnd.viewDef
+	// (for perf counters), which is not set (or stale) when we draw our own overlays, so provide a neutral one.
+	void VR_DrawFullScreenQuad() {
+		static viewDef_t neutralView;	// zero-initialized: not a lightgem, no entities
+		const viewDef_t *oldView = backEnd.viewDef;
+		backEnd.viewDef = &neutralView;
+		RB_DrawFullScreenQuad();
+		backEnd.viewDef = oldView;
+	}
+}
+
 const float OpenXRBackend::GameUnitsToMetres = 0.02309f;
 const float OpenXRBackend::MetresToGameUnits = 1.0f / GameUnitsToMetres;
 
@@ -185,7 +197,7 @@ void OpenXRBackend::RenderStereoView( const frameData_t *frameData ) {
 		if ( vr_comfortVignette.GetBool() && vignetteEnabled ) {
 			DrawComfortVignette((eyeView_t)eye);
 		}
-		if ( !frameData->render2D ) {
+		if ( !frameData->render2D && aimIndicatorValid ) {
 			DrawAimIndicator( frameData->mouseAimSize );
 		}
 	}
@@ -203,6 +215,12 @@ void OpenXRBackend::RenderStereoView( const frameData_t *frameData ) {
 	GLimp_SwapBuffers();
 
 	SubmitFrame();
+
+	static bool firstFrameReported = false;
+	if ( !firstFrameReported ) {
+		common->Printf( "VR: first frame submitted to the headset\n" );
+		firstFrameReported = true;
+	}
 
 	frameBuffers->defaultFbo = defaultFbo;
 	frameBuffers->currentRenderFbo = defaultFbo;
@@ -431,6 +449,7 @@ idScreenRect VR_CalcLightScissorRectangle( viewLight_t *vLight, const viewDef_t 
 void OpenXRBackend::UpdateRenderViewsForEye( const emptyCommand_t *cmds, int eye ) {
 	TRACE_GL_SCOPE("UpdateRenderViewsForEye")
 	
+	aimIndicatorValid = false;
 	std::vector<viewDef_t *> views;
 	for ( const emptyCommand_t *cmd = cmds; cmd; cmd = ( const emptyCommand_t * )cmd->next ) {
 		if ( cmd->commandId == RC_DRAW_VIEW ) {
@@ -479,6 +498,7 @@ void OpenXRBackend::UpdateRenderViewsForEye( const emptyCommand_t *cmds, int eye
 		}
 
 		if ( viewDef->renderView.viewID == VID_PLAYER_VIEW ) {
+			aimIndicatorValid = true;
 			idVec3 aimViewPos;
 			R_LocalPointToGlobal( viewDef->worldSpace.modelViewMatrix, aimIndicatorPos, aimViewPos );
 			idMat4 modelView (mat3_identity, aimViewPos);
@@ -619,7 +639,7 @@ void OpenXRBackend::MirrorVrView( idImage *eyeTexture, idImage *uiTexture ) {
 	if ( UsesSrgbTextures() ) {
 		qglEnable( GL_FRAMEBUFFER_SRGB );
 	}
-	RB_DrawFullScreenQuad();
+	VR_DrawFullScreenQuad();
 	qglDisable( GL_FRAMEBUFFER_SRGB );
 }
 
@@ -641,7 +661,7 @@ void OpenXRBackend::DrawAimIndicator( float size ) {
 	uniforms->size.Set( size );
 	uniforms->color.Set( vr_aimIndicatorColorR.GetFloat(), vr_aimIndicatorColorG.GetFloat(), vr_aimIndicatorColorB.GetFloat(), vr_aimIndicatorColorA.GetFloat() );
 	GL_State( GLS_DEPTHFUNC_ALWAYS | GLS_DEPTHMASK | GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA | GLS_SRCBLEND_SRC_ALPHA );
-	RB_DrawFullScreenQuad();	
+	VR_DrawFullScreenQuad();	
 }
 
 void OpenXRBackend::UpdateFrameStatus( const frameData_t *frameData ) {
@@ -691,7 +711,7 @@ void OpenXRBackend::DrawComfortVignette(eyeView_t eye) {
 	uniforms->corridor.Set( vr_comfortVignetteCorridor.GetFloat() );
 	uniforms->center.Set( uv );
 	GL_State( GLS_DEPTHFUNC_ALWAYS | GLS_DEPTHMASK | GLS_SRCBLEND_SRC_ALPHA | GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA );
-	RB_DrawFullScreenQuad();
+	VR_DrawFullScreenQuad();
 }
 
 void OpenXRBackend::UpdateLightScissor( viewLight_t *vLight, const viewDef_t *viewDef ) {

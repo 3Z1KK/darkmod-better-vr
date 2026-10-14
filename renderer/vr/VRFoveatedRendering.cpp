@@ -173,7 +173,13 @@ void VRFoveatedRendering::DrawRadialDensityMaskToDepth( int eye ) {
 	uniforms->radius.Set( vr_foveatedInnerRadius.GetFloat(), vr_foveatedMidRadius.GetFloat(), vr_foveatedOuterRadius.GetFloat() );
 	uniforms->invClusterResolution.Set( 8.f / frameBuffers->primaryFbo->Width(), 8.f / frameBuffers->primaryFbo->Height() );
 
-	RB_DrawFullScreenQuad();
+	{
+		static viewDef_t neutralView;
+		const viewDef_t *oldView = backEnd.viewDef;
+		backEnd.viewDef = &neutralView;
+		RB_DrawFullScreenQuad();
+		backEnd.viewDef = oldView;
+	}
 }
 
 void VRFoveatedRendering::ReconstructImageFromRdm( int eye ) {

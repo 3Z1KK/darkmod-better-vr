@@ -98,6 +98,7 @@ private:
 
 	idVec3 aimIndicatorPos;
 	idMat4 aimIndicatorMvp;
+	bool aimIndicatorValid = false;
 	GLSLProgram *vrAimIndicatorShader = nullptr;
 
 	GLSLProgram *comfortVignetteShader = nullptr;
