@@ -417,6 +417,8 @@
     <ClInclude Include="game\vr\VRMovers.h" />
     <ClInclude Include="game\vr\VRBow.h" />
     <ClInclude Include="game\vr\VRArrows.h" />
+    <ClInclude Include="game\vr\VRMelee.h" />
+    <ClInclude Include="game\vr\VRReadables.h" />
     <ClInclude Include="game\HidingSpotSearchCollection.h" />
     <ClInclude Include="game\Http\HttpConnection.h" />
     <ClInclude Include="game\Http\HttpRequest.h" />
@@ -1087,6 +1089,8 @@
     <ClCompile Include="game\vr\VRMovers.cpp" />
     <ClCompile Include="game\vr\VRBow.cpp" />
     <ClCompile Include="game\vr\VRArrows.cpp" />
+    <ClCompile Include="game\vr\VRMelee.cpp" />
+    <ClCompile Include="game\vr\VRReadables.cpp" />
     <ClCompile Include="game\HidingSpotSearchCollection.cpp" />
     <ClCompile Include="game\Http\HttpConnection.cpp" />
     <ClCompile Include="game\Http\HttpRequest.cpp" />

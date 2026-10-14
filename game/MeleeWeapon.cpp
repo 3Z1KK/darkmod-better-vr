@@ -31,6 +31,7 @@ const int CONTENTS_MELEE_ACTCOLLIDE = CONTENTS_MELEEWEAP | CONTENTS_BODY; // par
 
 CMeleeWeapon::CMeleeWeapon( void ) 
 {
+	m_bVRSwing = false;
 	m_Owner = NULL;
 	m_WeapClip = NULL;
 	m_ClipOffset = vec3_zero;
@@ -459,7 +460,7 @@ void CMeleeWeapon::Think( void )
 
 	// Run the checks for an attack, handle what happens when something is hit
 	// TODO: Time interleave this test?
-	if( m_bAttacking )
+	if( m_bAttacking && !m_bVRSwing )
 	{
 		CheckAttack( m_OldOrigin, m_OldAxis );
 
@@ -1243,4 +1244,84 @@ void CMeleeWeapon::CheckAICMSwaps( )
 		if( index == num )
 			pAI->SwapHeadAFCM( true );
 	}
+}
+
+/*
+===============================================================================
+	VR hands (see MeleeWeapon.h)
+===============================================================================
+*/
+
+void CMeleeWeapon::VR_BeginSwing( idActor *ActOwner, const char *AttName )
+{
+	if( m_bAttacking )
+	{
+		DeactivateAttack();
+	}
+	m_Owner = ActOwner;
+	if( !VR_SetAttack( AttName ) && !VR_SetAttack( "overhead" ) )
+	{
+		gameLocal.Warning( "VR melee: weapon %s has no attack %s", name.c_str(), AttName );
+		return;
+	}
+	m_bAttacking = true;
+	m_bVRSwing = true;
+	m_bWorldCollide = true;
+	m_bFailsafeTrace = false;
+	m_StopMass = spawnArgs.GetFloat( "stop_mass" );
+	m_ParticlesMade = 0;
+	m_bModAICMs = spawnArgs.GetBool( "use_larger_ai_head_CMs" );
+	m_OldOrigin = GetPhysics()->GetOrigin();
+	m_OldAxis = GetPhysics()->GetAxis();
+}
+
+bool CMeleeWeapon::VR_SetAttack( const char *AttName )
+{
+	const idKeyValue *key = spawnArgs.FindKey( va( "att_type_%s", AttName ) );
+	if( key == NULL )
+	{
+		return false;
+	}
+	m_MeleeType = (EMeleeType) atoi( key->GetValue().c_str() );
+	m_ActionName = AttName;
+	return true;
+}
+
+void CMeleeWeapon::VR_MoveTo( const idVec3 &worldPos )
+{
+	idVec3 masterOrigin;
+	idMat3 masterAxis;
+	if( GetMasterPosition( masterOrigin, masterAxis ) )
+	{
+		SetOrigin( ( worldPos - masterOrigin ) * masterAxis.Transpose() );
+	}
+	else
+	{
+		SetOrigin( worldPos );
+	}
+	if( m_bAttacking && m_bModAICMs )
+	{
+		CheckAICMSwaps();
+	}
+}
+
+bool CMeleeWeapon::VR_Hit( trace_t &tr, const idVec3 &from, const idVec3 &velDir )
+{
+	if( !m_bAttacking || m_Owner.GetEntity() == NULL )
+	{
+		return false;
+	}
+	HandleValidCollision( tr, from, velDir );
+	return m_bAttacking;
+}
+
+void CMeleeWeapon::VR_EndSwing( void )
+{
+	DeactivateAttack();
+	m_bVRSwing = false;
+}
+
+int CMeleeWeapon::VR_ClipMask( void )
+{
+	return CONTENTS_MELEE_WORLDCOLLIDE;
 }

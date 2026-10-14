@@ -3322,9 +3322,9 @@ void idPlayer::DrawHUD(idUserInterface *_hud)
 		weapon.GetEntity()->UpdateGUI();
 
 		// only render the first overlays which are part of the game world
-		// VR: the pouch on the left hand replaces the inventory strip
+		// VR: the pouch on the left hand replaces the inventory strip, readables are shown at the hand
 		m_overlays.drawOverlays( [this](int id) {
-			return m_overlays.getLayer(id) <= LAYER_LAST_TONEMAPPED && !( id == m_InventoryOverlay && vrHands.IsActive() );
+			return m_overlays.getLayer(id) <= LAYER_LAST_TONEMAPPED && !( id == m_InventoryOverlay && vrHands.IsActive() ) && !vrHands.IsOverlayInHand(id);
 		} );
 	}
 
@@ -3333,7 +3333,7 @@ void idPlayer::DrawHUD(idUserInterface *_hud)
 	if ( !noHud ) {
 		// now render all the overlays which are HUD
 		m_overlays.drawOverlays( [this](int id) {
-			return m_overlays.getLayer(id) > LAYER_LAST_TONEMAPPED && !( id == m_InventoryOverlay && vrHands.IsActive() );
+			return m_overlays.getLayer(id) > LAYER_LAST_TONEMAPPED && !( id == m_InventoryOverlay && vrHands.IsActive() ) && !vrHands.IsOverlayInHand(id);
 		} );
 
 		// Daft Mugi #6331: Show viewpos on player HUD

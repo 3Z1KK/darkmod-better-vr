@@ -1506,6 +1506,9 @@ public: // greebo: Made these public for now, I didn't want to write an accessor
 	* Note: overrides idActor::TestKnockoutBlow.
 	**/
 	virtual bool			TestKnockoutBlow( idEntity* attacker, const idVec3& dir, trace_t *tr, int location, bool bIsPowerBlow, bool performAttack = true ) override;
+	// VR: a helmet of metal, chain, plate or with a face guard (part of the head model or worn on the head).
+	// It protects completely against the VR player's knockouts; no helmet or a leather one follows the normal rules.
+	bool					VR_HasHardHelmet( void );
 	
 	/**
 	* Can the AI greet someone?

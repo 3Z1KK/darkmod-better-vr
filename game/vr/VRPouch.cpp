@@ -271,6 +271,13 @@ void VR_UpdateHandPanel( idPlayer *player, const idVRHand &hand, idUserInterface
 	idVec3 toEye = eye - pos;
 	toEye.Normalize();
 	pos += toEye * 1.0f;
+	VR_UpdatePanel( gui, pos, toEye, vr_pouchSize.GetFloat(), panelEntity, panelHandle );
+}
+
+void VR_UpdatePanel( idUserInterface *gui, const idVec3 &pos, const idVec3 &toEye, float size, renderEntity_t &panelEntity, qhandle_t &panelHandle ) {
+	if ( gameRenderWorld == nullptr || gui == nullptr ) {
+		return;
+	}
 	idVec3 up( 0, 0, 1 );
 	up -= toEye * ( up * toEye );
 	if ( up.Normalize() < 0.01f ) {
@@ -278,7 +285,6 @@ void VR_UpdateHandPanel( idPlayer *player, const idVRHand &hand, idUserInterface
 	}
 	// the viewer looks along -toEye, so up x toEye points to the viewer's right (keeps the axis right-handed)
 	const idVec3 right = up.Cross( toEye );
-	const float size = vr_pouchSize.GetFloat();
 
 	memset( &panelEntity, 0, sizeof( panelEntity ) );
 	idRenderModel *model = GetPouchModel();

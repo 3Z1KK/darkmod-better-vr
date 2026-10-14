@@ -21,6 +21,8 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "VRMovers.h"
 #include "VRBow.h"
 #include "VRArrows.h"
+#include "VRMelee.h"
+#include "VRReadables.h"
 
 /*
  * VR hands: the player's only way to touch the world.
@@ -193,6 +195,8 @@ public:
 	void			TakeOver( idPlayer *player, int handIndex, idEntity *ent );
 	idVRTools &		GetTools() { return tools; }
 	idVRArrowSelector &GetArrowSelector() { return arrowSelector; }
+	// a readable's page shown at a hand (not drawn on the screen)
+	bool			IsOverlayInHand( int overlayHandle ) const { return readables.IsOverlayInHand( overlayHandle ); }
 	// the bow: a hand holding the bow or the string lets go / a hand grabs a bow placed in the map
 	void			BowRelease( idPlayer *player, int handIndex ) { bow.OnRelease( player, hands, handIndex ); }
 	bool			BowTakeWorld( idPlayer *player, int handIndex, idEntity *ent ) { return bow.TakeWorldBow( player, hands, handIndex, ent ); }
@@ -215,6 +219,8 @@ private:
 	idVRMovers		movers;
 	idVRBow			bow;
 	idVRArrowSelector arrowSelector;
+	idVRMelee		melee;
+	idVRReadables	readables;
 	int				calibrateAt = 0;
 	idStr			calibrateMode;
 	idList< idEntityPtr<idEntity> > highlighted;

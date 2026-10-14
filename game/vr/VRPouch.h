@@ -71,3 +71,5 @@ private:
 
 // a small 2D panel (a GUI) floating above a hand, turned towards the eyes; handle -1 = not added yet
 void VR_UpdateHandPanel( idPlayer *player, const idVRHand &hand, idUserInterface *gui, renderEntity_t &panelEntity, qhandle_t &panelHandle );
+// a GUI on a 4:3 panel at pos, its front towards the viewer (toEye), width size
+void VR_UpdatePanel( idUserInterface *gui, const idVec3 &pos, const idVec3 &toEye, float size, renderEntity_t &panelEntity, qhandle_t &panelHandle );

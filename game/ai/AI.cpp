@@ -11820,6 +11820,104 @@ idAI::TestKnockoutBlow
 =====================
 */
 
+namespace {
+	// does the entity's model have a surface of metal, chain or plate (with its skin)?
+	bool VR_HasHardSurface( idEntity *ent )
+	{
+		if ( ent == NULL || ent->IsHidden() )
+		{
+			return false;
+		}
+		const renderEntity_t *re = ent->GetRenderEntity();
+		if ( re == NULL || re->hModel == NULL )
+		{
+			return false;
+		}
+		for ( int i = 0; i < re->hModel->NumSurfaces(); i++ )
+		{
+			const modelSurface_t *surf = re->hModel->Surface( i );
+			const idMaterial *mat = surf ? surf->material : NULL;
+			if ( re->customShader != NULL )
+			{
+				mat = re->customShader;
+			}
+			else if ( re->customSkin != NULL && mat != NULL )
+			{
+				mat = re->customSkin->RemapShaderBySkin( mat );
+			}
+			if ( mat == NULL )
+			{
+				continue;
+			}
+			const idStr type = g_Global.GetSurfName( mat );
+			if ( type == "metal" || type == "armor_chain" || type == "armor_plate" )
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+}
+
+bool idAI::VR_HasHardHelmet( void )
+{
+	// a face guard (the KO angles say so)
+	if ( m_KoDotVert == 1.0f || m_KoDotHoriz == 1.0f )
+	{
+		return true;
+	}
+
+	idEntity *headEnt = head.GetEntity();
+
+	// a helmet that is part of the head model (helmeted heads are flagged by ko_alert_immune_state 4):
+	// metal, chain or plate protect, a leather one keeps the normal rules
+	if ( m_KoAlertImmuneState == 4 && VR_HasHardSurface( headEnt ) )
+	{
+		return true;
+	}
+
+	// a helmet worn on the head (attached to the head joint or to the head entity)
+	idList<idEntity *> children;
+	GetTeamChildren( &children );
+	for ( int i = 0; i < children.Num(); i++ )
+	{
+		idEntity *c = children[i];
+		if ( c == NULL || c == headEnt || c->IsHidden() )
+		{
+			continue;
+		}
+		idEntity *master = c->GetBindMaster();
+		bool onHead = ( headEnt != NULL && master == headEnt );
+		if ( !onHead && master == this && c->GetBindJoint() != INVALID_JOINT )
+		{
+			if ( c->GetBindJoint() == m_HeadJointID )
+			{
+				onHead = true;
+			}
+			else
+			{
+				const char *jointName = GetAnimator()->GetJointName( c->GetBindJoint() );
+				onHead = ( jointName != NULL && idStr::Icmp( jointName, "head" ) == 0 );
+			}
+		}
+		if ( !onHead )
+		{
+			continue;
+		}
+		// something that covers the head (solid to weapons like the helmet props, or called a helmet), not a cap or goggles
+		const bool solid = c->GetPhysics() != NULL
+			&& ( c->GetPhysics()->GetContents() & ( CONTENTS_SOLID | CONTENTS_CORPSE | CONTENTS_RENDERMODEL ) ) != 0;
+		const idStr modelName = c->spawnArgs.GetString( "model" );
+		const bool calledHelmet = modelName.Find( "helm", false ) >= 0 || idStr( c->spawnArgs.GetString( "classname" ) ).Find( "helm", false ) >= 0;
+		if ( ( solid || calledHelmet ) && VR_HasHardSurface( c ) )
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+
 bool idAI::TestKnockoutBlow( idEntity* attacker, const idVec3& dir, trace_t *tr, int location, bool bIsPowerBlow, bool performAttack )
 {
 	DM_LOG(LC_AI, LT_DEBUG)LOGSTRING("idAI::TestKnockoutBlow - Attempted KO of AI %s\r", name.c_str());
@@ -11857,6 +11955,18 @@ bool idAI::TestKnockoutBlow( idEntity* attacker, const idVec3& dir, trace_t *tr,
 		}
 		
 		return false; // damage zone not matching
+	}
+
+	// VR: only AI without a helmet or with a leather one can be knocked out by the VR player.
+	// Metal, chain, plate and face guard helmets protect completely.
+	if ( attacker != NULL && attacker->IsType( idPlayer::Type ) && static_cast<idPlayer *>( attacker )->vrHands.IsActive()
+		&& VR_HasHardHelmet() )
+	{
+		if (performAttack)
+		{
+			GetMind()->GetState()->OnFailedKnockoutBlow(attacker, dir, true);
+		}
+		return false;
 	}
 
 	// check if we hit within the angles

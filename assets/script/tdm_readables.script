@@ -1,0 +1,808 @@
+/*****************************************************************************
+The Dark Mod GPL Source Code
+
+This file is part of the The Dark Mod Source Code, originally based
+on the Doom 3 GPL Source Code as published in 2011.
+
+The Dark Mod Source Code is free software: you can redistribute it
+and/or modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation, either version 3 of the License,
+or (at your option) any later version. For details, see LICENSE.TXT.
+
+Project: The Dark Mod (http://www.thedarkmod.com/)
+
+******************************************************************************/
+
+#ifndef __DARKMOD_READABLES__
+#define __DARKMOD_READABLES__
+
+// Darkmod readables script, by Gildoran, 2/4/2006 4:40AM
+
+// VR (The Dark Mod VR): with VR hands (cvar vr_readablesInHand 1) a fixed readable is opened by grabbing it
+// and stays open until the hand lets go, wherever the player looks; its page is shown at the hand, centered.
+// Everything else is unchanged.
+// I need to comment this code better.
+// Note to self: think of a better name for the cvar that is read.
+
+// Note on the readable lock option: This is intended to be a user option.
+// Something that's not yet implemented is that I wish to make the user look
+// towards the readable's origin when the lock is turned on.
+
+// Bug: The readable's position on the screen isn't updated after the
+// user clicks to stop reading - this is inconsistant with the readable
+// automatically turning off.
+
+
+//#include "script/tdm_defs.script"
+
+#define IM_READABLE ( IM_ALL & ~( IM_VIEW_ANGLE | IM_MOVEMENT | IM_CROUCH | IM_JUMP | IM_CLIMB ) ) // grayman #3586 - disallow use of inventory items
+//#define IM_READABLE ( IM_ALL & ~( IM_VIEW_ANGLE | IM_MOVEMENT | IM_CROUCH | IM_JUMP | IM_CLIMB | IM_ITEM_USE ) ) // old way
+
+// Should probably be changed later.
+#define DEFAULT_FROB_DIST 110
+#define EVENT_OPEN "readableOpen"
+#define EVENT_CLOSE "readableClose"
+#define EVENT_PAGE_TURN_BEGIN "pageTurnBegin"
+#define EVENT_PAGE_TURN_END "pageTurnEnd"
+#define EVENT_OUTPUT_CONTENTS_SIZE "outputContentsSize"
+#define STATE_CHANGE_PAGE_REQUEST "ChangePageRequest"
+//#define STATE_CLOSE_REQUEST "CloseRequest"	// duplicate
+#define STATE_CONTENTS_REPOSITION "ContentsReposition"
+#define STATE_CONTENTS_POSITION "ContentsPosition"
+#define STATE_CONTENTS_ORIGIN_ACTIVE "ContentsOriginActive"
+#define STATE_ANIMATION_IN_PROGRESS "AnimationInProgress"
+#define STATE_CONTENTS_ORIGIN_X "ContentsOriginX"
+#define STATE_CONTENTS_ORIGIN_Y "ContentsOriginY"
+#define STATE_CONTENTS_WIDTH "ContentsWidth"
+#define STATE_CONTENTS_HEIGHT "ContentsHeight"
+
+object darkmod_readable_base {
+
+	/**
+	 * Basic setup of the readable by parsing the spawnargs/xdata.
+	 */
+	void setup();
+
+	string queryKey( string key );
+
+	void setWorldPage( float page );
+	void setupPageData( float page, entity guiEnt, float gui );
+
+	/**
+	* Returns whether or not the readable is accessible; if not, the player cannot use it,
+	* and it will deactivate if the player is currently reading it.
+	* 
+	* @returns: If the readable is accessible, it returns 'x y 0'.
+	*			If the readable is inaccessible, but the origin is visible, it returns 'x y 1'.
+	*			If the readable is inaccessible, and the origin isn't visible, it returns '0 0 -1'.
+	*			x/y are the screen tangents as defined by projectPointToScreen.
+	*/
+	vector isAccessible( vector eyePos, vector eyeAng, vector eyeFov );
+
+	float maxBoundDistance();
+	vector projectPointToScreen( vector point, vector vAng );
+	vector rotateVector( vector v, vector a );
+
+	/**
+	 * stgatilov #6313: wait for animation to complete.
+	 * You must SIMULTANEOUSLY call GUI event which starts animation by resetting "Desktop" window!
+	 * As of now, it can be EVENT_CLOSE or EVENT_PAGE_TURN_BEGIN.
+	 */
+	void waitForAnimation();
+
+	/**
+	 * greebo: Checks for page turn events and performs the transitions
+	 *         between the page GUIs. Also plays the page turn sound.
+	 */
+	void handlePageTurns(entity guiEnt);
+	
+	/**
+	 * greebo: Reloads the xdata declarations. This function is invoked by the SDK
+	 * when the user enters the "reloadXData" command. It can be called directly as well.
+	 */
+	void reloadXData();
+
+	/**
+	 * greebo: This is called by the SDK whenever the user switches the language in the menu.
+	 * Such an event causes the current readable to be closed.
+	 */
+	void onLanguageChanged();
+
+	/**
+	 * greebo: When a readable GUI is opened certain things are performed,
+	 * like triggers being called and the objective system is notified.
+	 */
+	void handleOpenEvent();
+
+	/**
+	 * greebo: When a readable GUI is shutting down certain things are performed,
+	 * like triggers being called and the objective system is notified.
+	 */
+	void handleCloseEvent();
+
+	/**
+	 * greebo: When a readable GUI is switching to a new page (also on readable open), 
+	 * the objective system is notified with the page number as argument.
+	 */
+	void handlePageReachedEvent(float pageNum);
+
+	/**
+	 * Triggers all entities as specified in this entity's spawnargs 
+	 * with the given <prefix>, e.g. 'trigger_on_close'.
+	 *
+	 * @returns: the number of targets triggered.
+	 */
+	float triggerTargets(string prefix);
+
+	 // Set to "rdata_" if we're using an external file
+    // or "" if we're using direct settings.
+    string prefix;
+
+	// The GUI handle
+	float overlayHandle;
+
+	// The currently displayed page
+	float page;
+
+	// The number of pages of this readable
+	float numPages;
+};
+
+object darkmod_readable_immobile : darkmod_readable_base
+{
+    void init();
+    void onFrob();
+};
+
+object darkmod_readable_mobile : darkmod_readable_base
+{
+	void init();
+    
+	/**
+	* greebo: This is the method that gets called from within the SDK
+	*		  when the player "uses" this readable as inventory item.
+	*
+	* @userEntity: the entity that is using this item, usually $player1
+	* @frobbedEntity: the entity the player is currently frobbing, may be $null_entity
+	* @buttonState: a float telling about the current button state (pressed, released)
+	*/
+	void inventoryUse(entity userEntity, entity frobbedEntity, float buttonState);
+};
+
+/**
+* ================== READABLE BASE =======================
+*/
+void darkmod_readable_base::setup()
+{
+	string val = getKey("xdata_contents");
+
+    if (val != "") {
+		// Copy all xdata variables into spawnargs with "rdata_" prefix
+        prefix = "rdata_";
+        self.loadExternalData( val, prefix );
+
+        string key = "";
+
+		/*string lastMatch = "";
+		while ((key = getNextKey("", lastMatch)) != "") {
+			//sys.print("Spawnarg: " + key + " = " + getKey(key) + "\n");
+			lastMatch = key;
+		}*/
+    } else {
+        prefix = "";
+    }
+
+	// As default, the first page is taken as world page
+    val = queryKey("world_page");
+    if (val != "") {
+        setWorldPage( sys.strToFloat(val) );
+	}
+    else {
+        setWorldPage(1);
+	}
+
+	string numPagesStr = queryKey("num_pages");
+	if (numPagesStr != "") {
+		numPages = sys.strToFloat( numPagesStr );
+	}
+	else {
+		sys.warning("num_pages not defined on readable " + getKey("name"));
+		numPages = 1;
+	}
+
+    // Tels: switch back to the first page (#3193)
+    page = 1;
+}
+
+float darkmod_readable_base::triggerTargets(string prefix)
+{
+	float targetCount = 0;
+
+	// Get all spawnargs matching the given prefix
+	string lastMatch = "";
+	string key = "";
+
+	while ((key = getNextKey(prefix, lastMatch)) != "")
+	{
+		entity target = sys.getEntity(getKey(key));
+
+		if (target != $null_entity)
+		{
+			// Trigger this entity and proceed to next target
+			target.activate(self);
+
+			targetCount++;
+		}
+
+		lastMatch = key;
+	}
+
+	return targetCount;
+}
+
+void darkmod_readable_base::waitForAnimation()
+{
+	$player1.setGuiFloat(overlayHandle, STATE_ANIMATION_IN_PROGRESS, 1);
+
+	while ($player1.getGuiFloat(overlayHandle, STATE_ANIMATION_IN_PROGRESS) != 0)
+	{
+		waitFrame();
+	}
+}
+
+void darkmod_readable_base::handleOpenEvent()
+{
+	// Fire the "on_opened" targets
+	triggerTargets("trigger_on_open");
+
+	// Raise a mission event to notify the objectives system
+	sys.handleMissionEvent(self, EVENT_READABLE_OPENED, "");
+}
+
+void darkmod_readable_base::handleCloseEvent()
+{
+	// Fire the "on_closed" targets
+	triggerTargets("trigger_on_close");
+
+	// Raise a mission event to notify objectives system
+	sys.handleMissionEvent(self, EVENT_READABLE_CLOSED, "");
+}
+
+void darkmod_readable_base::handlePageReachedEvent(float pageNum)
+{
+	// Raise a mission event to notify objectives system,
+	// use the page number as argument
+	sys.handleMissionEvent(self, EVENT_READABLE_PAGE_REACHED, pageNum);
+}
+
+// Like getKey(), but first checks spawnargs, then checks
+// any external data.
+string darkmod_readable_base::queryKey( string key )
+{
+    string val = getKey( key );
+    if (val) {
+        return sys.translate(val);
+    }
+    else if (prefix != "") {
+        return sys.translate( getKey( prefix + key ) );
+	}
+}
+
+// Reload the xdata spawnargs and re-setup the pages
+void darkmod_readable_base::reloadXData()
+{
+	// Reloading xdata...
+	sys.println("Reloading XData for entity " + getKey("name") + "...");
+
+	setup();
+
+	if (overlayHandle != -1)
+	{
+		entity guiEnt = $player1;
+
+		// Play the transition sound
+		string soundShader = queryKey("snd_page_turn");
+		guiEnt.startSoundShader(soundShader, SND_CHANNEL_ANY);
+
+		// Trigger the page turn begin animation
+		// and wait till the fadeout has been finished
+		guiEnt.callGui(overlayHandle, EVENT_PAGE_TURN_BEGIN);
+		waitForAnimation();
+
+		guiEnt.destroyOverlay(overlayHandle);
+		
+		// Create the new overlay using the first page GUI
+		overlayHandle = guiEnt.createOverlay(queryKey("gui_page"+page), 10);
+		setupPageData(page, guiEnt, overlayHandle);
+		guiEnt.setGuiFloat(overlayHandle, STATE_CONTENTS_REPOSITION, 1);
+
+		// Trigger the counterpart of the page turn begin animation
+		guiEnt.callGui(overlayHandle, EVENT_PAGE_TURN_END);
+	}
+}
+
+void darkmod_readable_base::onLanguageChanged()
+{
+	if (overlayHandle != -1)
+	{
+		sys.println("Language changed, closing readable: " + getName());
+		// greebo: Set close request to 1, which will trigger readable shutdown
+		$player1.setGuiFloat(overlayHandle, STATE_CLOSE_REQUEST, 1);
+
+		// tels: We need to re-init and restart with page 1 - the number of pages might have changed. (#3193)
+		setup();
+	}
+}
+
+// Sets which page is displayed to the world.
+void darkmod_readable_base::setWorldPage( float page )
+{
+    string val = queryKey("gui_page"+page+"_world");
+    if (val != "")
+        setGui( 1, val );
+    else
+    {
+        val = queryKey("gui_page"+page);
+        if ( sys.strRight( val, 4 ) == ".gui" )
+        {
+            val = sys.strLeft( val, sys.strLength(val)-4 ) + "_world.gui";
+            //sys.println( "GUI! " + val );
+            setGui( GUI_ENTITY1, val );
+        }
+    }
+    setupPageData( page, self, GUI_ENTITY1 );
+    setGuiFloat( GUI_ENTITY1, "worldDisplay", 1 );
+}
+
+// Setting format is:
+// "gui_pageN" "guis/mygui.gui"
+// "pageN_key" "value"
+// Settings on the readable override settings on the external file.
+void darkmod_readable_base::setupPageData( float page, entity guiEnt, float gui ) {
+    string pre;
+    float pLen;
+    string key;
+
+    //sys.println("n: "+getName());
+
+    if (prefix != "")
+    {
+        pre = prefix+"page"+page+"_";
+        pLen = sys.strLength(pre);
+        key = "";
+        while ( ( key = getNextKey(pre,key) ) != "" )
+		{
+            if (key != pre)
+            {
+                //sys.println("k: "+key+": "+getKey(key));
+                guiEnt.setGuiStringFromKey( gui, sys.strSkip(key,pLen), self, key );
+            }
+		}
+    }
+
+    pre = "page"+page+"_";
+    pLen = sys.strLength(pre);
+    key = "";
+    while ( ( key = getNextKey(pre,key) ) != "" )
+	{
+        if (key != pre)
+        {
+            //sys.println("k: "+key+": "+getKey(key));
+            guiEnt.setGuiStringFromKey( gui, sys.strSkip(key,pLen), self, key );
+        }
+	}
+
+	// Let the GUI know how much pages we have
+	guiEnt.setGuiInt(gui, "numPages", numPages);
+	guiEnt.setGuiInt(gui, "curPage", page);
+}
+
+vector darkmod_readable_base::isAccessible( vector eyePos, vector eyeAng, vector eyeFov )
+{
+    // Vector from readable to eye.
+    vector r2e = eyePos - getWorldOrigin();
+    vector retVal = projectPointToScreen( -r2e, eyeAng );
+
+    // If the origin is out of sight, return '0 0 0' to indicate so.
+    if ( retVal_z == -1 )
+        return retVal;
+    retVal_z = 1;
+
+    // Is the readable within the player's FOV?
+    if ( retVal_x >= eyeFov_x || -retVal_x  >= eyeFov_x ||
+         retVal_y >= eyeFov_y || -retVal_y  >= eyeFov_y )
+        return retVal;
+
+    float r2eDist = sys.vecLength(r2e);
+    float fDist;
+
+    // Is the player within the readable's FOV?
+    float tolerance = getFloatKey("readable_face_tolerance");
+    if (tolerance)
+    {
+        vector face = rotateVector( getVectorKey("readable_face"), getAngles() );
+        fDist = sys.vecLength(face) * r2eDist;
+
+		if (fDist == 0) {
+			sys.warning("readable_face spawnarg not set on entity " + getKey("name") + "\n");
+		}
+		else if ( fDist > 0.01 && sys.DotProduct(face,r2e)/fDist < sys.cos(tolerance) ) {
+            return retVal;
+		}
+    }
+
+    // Is the player close enough to the readable?
+    fDist = getFloatKey("frob_distance");
+    if ( fDist <= 0 )
+        fDist = DEFAULT_FROB_DIST;
+    if ( r2eDist > fDist + maxBoundDistance() )
+        return retVal;
+
+    retVal_z = 0;
+    return retVal;
+}
+
+// Returns the maximum distance from an entity's origin to one of the corners of its bounding box.
+float darkmod_readable_base::maxBoundDistance()
+{
+    vector bmin = getMins();
+    vector bmax = getMaxs();
+    vector combination;
+    float combinationDist;
+    float maxDistSquared = 0;
+    float i;
+
+    for (i=0; i<8; i++)
+    {
+        if ( i & 1 )
+            combination_x = bmax_x;
+        else
+            combination_x = bmin_x;
+
+        if ( i & 2 )
+            combination_y = bmax_y;
+        else
+            combination_y = bmin_y;
+
+        if ( i & 4 )
+            combination_z = bmax_z;
+        else
+            combination_z = bmin_z;
+
+        combinationDist = combination_x * combination_x + combination_y * combination_y + combination_z * combination_z;
+        if (maxDistSquared < combinationDist)
+            maxDistSquared = combinationDist;
+    }
+
+    return sys.sqrt( maxDistSquared );
+}
+
+// Projects a point onto a screen, assuming that the view is at the origin.
+// Arg list:
+// point = the point to project onto the screen
+// vAng  = rotational angles of the view
+// Returns: If the point is in front of the view, this function returns a
+//          vector where the x/y coordinates are the horizontal/vertical
+//          tangents of the point, and the z coordinate is 1.
+//          Otherwise, returns 0/0/-1.
+//          In other words, if the screen has an FOV of 90 degrees, -1/-1/1
+//          is the upper left of the screen, and 1/1/1 is the lower right.
+vector darkmod_readable_base::projectPointToScreen( vector point, vector vAng ) {
+    // This code assumes that angToForward/Up/Right form an orthonormal basis,
+    // in order to simplify calculations.
+
+    // Is the point WAY offscreen or behind the view?
+    float scale = sys.DotProduct( point, sys.angToForward(vAng) );
+    if (scale <= 0.001)
+        return '0 0 -1';
+
+    vector screen;
+    screen_x =  sys.DotProduct( point, sys.angToRight(vAng) ) / scale;
+    screen_y = -sys.DotProduct( point, sys.angToUp(vAng)    ) / scale;
+    screen_z = 1;
+    return screen;
+}
+
+// Rotates a vector v by the angles a.
+vector darkmod_readable_base::rotateVector( vector v, vector a ) {
+    return v_x*sys.angToForward(a)-v_y*sys.angToRight(a)+v_z*sys.angToUp(a);
+}
+
+void darkmod_readable_base::handlePageTurns(entity guiEnt) {
+	// Check the state variables (they get set by the GUI)
+	float changePageReq = guiEnt.getGuiInt(overlayHandle, STATE_CHANGE_PAGE_REQUEST);
+	float pageDoChange = 0;
+
+	if (changePageReq < 0) {
+		guiEnt.setGuiInt(overlayHandle, STATE_CHANGE_PAGE_REQUEST, changePageReq + 1);
+		if (page > 1) {
+			pageDoChange = 1;
+			page--;
+		}
+	}
+	else if (changePageReq > 0) {
+		guiEnt.setGuiInt(overlayHandle, STATE_CHANGE_PAGE_REQUEST, changePageReq - 1);
+		if (page < numPages) {
+			pageDoChange = 1;
+			page++;
+		}
+	}
+
+	if (pageDoChange) {
+		// Play the transition sound
+		string soundShader = queryKey("snd_page_turn");
+		guiEnt.startSoundShader(soundShader, SND_CHANNEL_ANY);
+
+		// Trigger the page turn begin animation
+		// and wait till the fadeout has been finished
+		guiEnt.callGui(overlayHandle, EVENT_PAGE_TURN_BEGIN);
+		waitForAnimation();
+
+		// stgatilov #6313: save information about user's intent
+		changePageReq = guiEnt.getGuiInt(overlayHandle, STATE_CHANGE_PAGE_REQUEST);
+		float closeReq = guiEnt.getGuiInt(overlayHandle, STATE_CLOSE_REQUEST);
+
+		guiEnt.destroyOverlay(overlayHandle);
+		
+		// Create the new overlay using the current page GUI
+		overlayHandle = guiEnt.createOverlay(queryKey("gui_page"+page), 10);
+		setupPageData(page, guiEnt, overlayHandle);
+		guiEnt.setGuiFloat(overlayHandle, STATE_CONTENTS_REPOSITION, 1);
+
+		// stgatilov #6313: restore information about user's intent
+		guiEnt.setGuiInt(overlayHandle, STATE_CHANGE_PAGE_REQUEST, changePageReq);  // note: replace changePageReq with 0 to disable page flip queuing
+		guiEnt.setGuiInt(overlayHandle, STATE_CLOSE_REQUEST, closeReq);
+
+		// Notify the objective system
+		handlePageReachedEvent(page);
+
+		// Trigger the counterpart of the page turn begin animation
+		guiEnt.callGui(overlayHandle, EVENT_PAGE_TURN_END);
+	}
+}
+
+/**
+* =============== READABLE IMMOBILE ========================
+*/
+void darkmod_readable_immobile::init()
+{
+	// Pass the call to the base class for setup
+	setup();
+	overlayHandle = -1;
+}
+
+void darkmod_readable_immobile::onFrob()
+{
+    vector fov = '1 0.75 0';
+
+	// VR: the hand touches it, that's enough (no looking at it or frob distance)
+	float vrHand = sys.strToFloat(sys.getcvar("vr_readablesInHand"));
+
+    vector scr = '0 0 0';
+	if (!vrHand)
+	{
+		scr = isAccessible( $player1.getEyePos(), $player1.getViewAngles(), fov );
+	}
+    if ( scr_z ) {
+		// scr_z is 1, hence this readable is inaccessible
+        return;
+	}
+
+	if (vrHand && overlayHandle != -1)
+	{
+		// VR: already open (grabbed again)
+		return;
+	}
+
+    if ($player1.getImmobilization("readable"))
+	{
+		// Readbles are blocked
+        return;
+	}
+
+	float rLock = sys.strToFloat(sys.getcvar("lock_readables"));
+    if (rLock)
+	{
+        $player1.setImmobilization( "readable", IM_ALL );
+	}
+    else
+	{
+        $player1.setImmobilization( "readable", IM_READABLE );
+	}
+
+	// Create the overlay using the first page GUI
+	page = 1;
+    overlayHandle = $player1.createOverlay(queryKey("gui_page"+page), 10);
+	setupPageData(page, $player1, overlayHandle);
+
+    vector contentsOrigin = '0 0 0';
+    $player1.callGui( overlayHandle, EVENT_OUTPUT_CONTENTS_SIZE );
+    if ($player1.getGuiFloat( overlayHandle, STATE_CONTENTS_ORIGIN_ACTIVE ))
+    {
+        contentsOrigin_x = $player1.getGuiFloat( overlayHandle, STATE_CONTENTS_ORIGIN_X );
+        contentsOrigin_y = $player1.getGuiFloat( overlayHandle, STATE_CONTENTS_ORIGIN_Y );
+    }
+    else
+    {
+        contentsOrigin_x = $player1.getGuiFloat( overlayHandle, STATE_CONTENTS_WIDTH  )/2;
+        contentsOrigin_y = $player1.getGuiFloat( overlayHandle, STATE_CONTENTS_HEIGHT )/2;
+    }
+
+    $player1.setGuiFloat(overlayHandle, STATE_CONTENTS_REPOSITION, 1);
+	$player1.setGuiFloat(overlayHandle, STATE_CHANGE_PAGE_REQUEST, 0);
+    $player1.callGui( overlayHandle, EVENT_OPEN );
+
+	// Trigger any targets
+	handleOpenEvent();
+
+	// Page event
+	handlePageReachedEvent(1);
+
+	while ( 1 )
+    {
+		if (vrHand)
+		{
+			// VR: stays open until the hand lets go (the hand code requests the closing)
+			scr = '0.5 0.5 0';
+		}
+		else
+		{
+			scr = isAccessible( $player1.getEyePos(), $player1.getViewAngles(), fov );
+		}
+
+        if (vrHand)
+        {
+            // (already centered)
+        }
+        else if (scr_z != -1)
+        {
+            scr_x = (scr_x/fov_x + 1) / 2;
+            scr_y = (scr_y/fov_y + 1) / 2;
+        }
+		else
+		{
+            // Hopefully, this'll move the readable far outside of the screen.
+            scr = '-2000 -2000 -1';
+        }
+
+		// A readable can be closed when the player turns away from it (immobile readable)
+		// or when some player action forces the closure (i.e. hitting the ATTACK or USE keys)
+		// (both immobile and mobile readables).
+
+		// When the latter happens, STATE_CLOSE_REQUEST is set to '1' by the DLL.
+		// So the first check handles the explicit closure, and the second one handles the 'look away' condition.
+
+		if ( $player1.getGuiFloat( overlayHandle, STATE_CLOSE_REQUEST ) || scr_z )
+		{
+			// The closing of this readable has been requested.
+			$player1.callGui( overlayHandle, EVENT_CLOSE );
+			waitForAnimation();
+			break;
+		}
+
+		// Check for page turn events
+		handlePageTurns($player1);
+
+        if (rLock || vrHand)
+		{
+            // Not the best solution, but it'll work for now.
+            $player1.setGuiString( overlayHandle, STATE_CONTENTS_POSITION, (320-contentsOrigin_x)+" "+(240-contentsOrigin_y)+" 0 0" );
+		}
+        else
+		{
+            $player1.setGuiString( overlayHandle, STATE_CONTENTS_POSITION, (640*scr_x-contentsOrigin_x)+" "+(480*scr_y-contentsOrigin_y)+" 0 0" );
+		}
+
+        sys.waitFrame();
+    }
+
+    $player1.setImmobilization( "readable", IM_NONE ); // grayman #3586
+	// Handle the "close" event of this readable
+	handleCloseEvent();
+
+    $player1.destroyOverlay( overlayHandle );
+	overlayHandle = -1;
+}
+
+/**
+* ============== READABLE MOBILE ====================
+*/
+void darkmod_readable_mobile::init() {
+	// Let the base class do the basic setup
+	setup();
+	overlayHandle = -1;
+}
+
+void darkmod_readable_mobile::inventoryUse(entity userEntity, entity frobbedEntity, float buttonState)
+{
+	// Check for running loops
+	if (overlayHandle != -1)
+	{
+		// Remember that we want to close readable
+		$player1.setGuiFloat( overlayHandle, STATE_CLOSE_REQUEST, 1 );
+		return;
+	}
+
+    if ($player1.getImmobilization("readable"))
+	{
+        return;
+	}
+
+    float rLock = sys.strToFloat(sys.getcvar("lock_readables"));
+
+    if (rLock)
+	{
+        $player1.setImmobilization( "readable", IM_ALL );
+	}
+    else
+	{
+        $player1.setImmobilization( "readable", IM_READABLE );
+	}
+
+	// Start with the first page
+	page = 1;
+    overlayHandle = $player1.createOverlay( queryKey("gui_page"+page), 10 );
+    setupPageData( page, $player1, overlayHandle );
+
+	vector contentsOrigin = '0 0 0';
+    $player1.callGui( overlayHandle, EVENT_OUTPUT_CONTENTS_SIZE );
+    if ($player1.getGuiFloat( overlayHandle, STATE_CONTENTS_ORIGIN_ACTIVE ))
+    {
+        contentsOrigin_x = $player1.getGuiFloat( overlayHandle, STATE_CONTENTS_ORIGIN_X );
+        contentsOrigin_y = $player1.getGuiFloat( overlayHandle, STATE_CONTENTS_ORIGIN_Y );
+    }
+    else
+    {
+        contentsOrigin_x = $player1.getGuiFloat( overlayHandle, STATE_CONTENTS_WIDTH  )/2;
+        contentsOrigin_y = $player1.getGuiFloat( overlayHandle, STATE_CONTENTS_HEIGHT )/2;
+    }
+
+    $player1.setGuiFloat( overlayHandle, STATE_CONTENTS_REPOSITION, 1 );
+    $player1.callGui( overlayHandle, EVENT_OPEN );
+
+	// Trigger any targets
+	handleOpenEvent();
+
+	// Page event
+	handlePageReachedEvent(1);
+
+	// Enter a new loop
+	while ( 1 )
+	{
+		if ( $player1.getGuiFloat( overlayHandle, STATE_CLOSE_REQUEST ) ) {
+			// greebo: Mouse has been clicked, enter fadeout mode
+			$player1.setImmobilization( "readable", IM_NONE );
+			$player1.callGui( overlayHandle, EVENT_CLOSE );
+			waitForAnimation();
+			break;
+		}
+
+		// Check for page turn events
+		handlePageTurns($player1);
+
+        $player1.setGuiString( overlayHandle, STATE_CONTENTS_POSITION, (320-contentsOrigin_x)+" "+(240-contentsOrigin_y)+" 0 0" );
+
+		sys.waitFrame();
+    }
+
+	// Handle the "close" event of this readable
+	handleCloseEvent();
+
+    $player1.destroyOverlay( overlayHandle );
+	overlayHandle = -1;
+}
+
+  //////////////////////////
+ // Non-member functions //
+//////////////////////////
+
+void readable_immobile_frob( entity r )
+{
+    darkmod_readable_immobile dr = r;
+    if (dr)
+        dr.onFrob();
+    else
+        sys.warning("Unable to cast entity.");
+}
+
+#endif //__DARKMOD_READABLE__

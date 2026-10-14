@@ -30,6 +30,8 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include <unordered_map>
 #include <string>
 
+extern idCVar vr_readablesInHand;
+
 idCVar vr_handsEnable( "vr_handsEnable", "1", CVAR_GAME | CVAR_BOOL, "VR: interact with the world through tracked hands" );
 idCVar vr_handTouchRadius( "vr_handTouchRadius", "2.5", CVAR_GAME | CVAR_FLOAT, "VR: radius (game units) around the palm that counts as touching" );
 idCVar vr_handCollision( "vr_handCollision", "1", CVAR_GAME | CVAR_BOOL, "VR: free hands are stopped by walls and solid objects" );
@@ -1195,6 +1197,8 @@ void idVRHands::Init() {
 	movers.Clear();
 	bow.Reset();
 	arrowSelector.Reset();
+	melee.Reset();
+	readables.Reset();
 	lastTime = 0;
 	lastDt = 0.0f;
 	initialized = true;
@@ -1207,6 +1211,8 @@ void idVRHands::Shutdown() {
 	pouch.Free();
 	arrowSelector.Free();
 	bow.Free();
+	melee.Free();
+	readables.Free();
 	if ( crystalHandle != -1 && gameRenderWorld ) {
 		gameRenderWorld->FreeEntityDef( crystalHandle );
 	}
@@ -1680,6 +1686,11 @@ void idVRHands::Update( idPlayer *player ) {
 	dt = idMath::ClampFloat( 0.0f, 0.1f, dt );
 	lastDt = dt;
 
+	// the readable script keeps fixed readables open while a hand holds them
+	if ( vr_readablesInHand.GetBool() != IsActive() ) {
+		vr_readablesInHand.SetBool( IsActive() );
+	}
+
 	const usercmd_t &cmd = player->usercmd;
 	const renderView_t *view = player->GetRenderView();
 	const bool viewOk = view != nullptr && !player->AI_DEAD;
@@ -1708,6 +1719,10 @@ void idVRHands::Update( idPlayer *player ) {
 	movers.Update( dt );
 	// the bow: nocking, drawing, the arrow on the string
 	bow.Update( player, hands, dt );
+	// swinging the sword or blackjack
+	melee.Update( player, hands, dt );
+	// letters and books in the hand
+	readables.Update( player, hands );
 
 	tools.Update( player, dt );
 	pouch.UpdatePendingGrabberItem( player, hands[0] );
@@ -1843,6 +1858,7 @@ void idVRHands::PostThink( idPlayer *player ) {
 	hands[0].UpdateVisual( lastDt );
 	hands[1].UpdateVisual( lastDt );
 	bow.UpdateRender( player, hands );
+	readables.UpdatePanels( player, hands );
 	UpdateLightCrystal( player );
 }
 

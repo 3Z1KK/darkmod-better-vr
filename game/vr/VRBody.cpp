@@ -28,6 +28,7 @@ idCVar vr_roomStepCreepSpeed( "vr_roomStepCreepSpeed", "30", CVAR_GAME | CVAR_FL
 idCVar vr_roomStepWalkSpeed( "vr_roomStepWalkSpeed", "65", CVAR_GAME | CVAR_FLOAT, "VR: real-life walking faster than this (units/s) makes normal walking footsteps" );
 idCVar vr_roomStepStride( "vr_roomStepStride", "28", CVAR_GAME | CVAR_FLOAT, "VR: real-life distance (units) per footstep" );
 idCVar vr_bodyWidth( "vr_bodyWidth", "18", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE, "VR: width of the player's collision body in VR (units; the normal game uses pm_bboxwidth 32). Applies on map load" );
+idCVar vr_viewBelowBoxTop( "vr_viewBelowBoxTop", "1", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE, "VR: the camera is this far (units, 1 unit = 2.3 cm) below the top of the player's collision box when standing straight" );
 idCVar vr_headInWallFade( "vr_headInWallFade", "1", CVAR_GAME | CVAR_BOOL, "VR: fade to black when the real head moves into a wall" );
 
 void idVRBody::Reset() {
@@ -139,14 +140,26 @@ void idVRBody::Update( idPlayer *player, renderView_t *view ) {
 	// unless the crouch button lowered the view on purpose, or the body is stuck crouched under a low ceiling
 	// while the real head is up (then the view stays inside the vent).
 	float eyeComp = 0.0f;
+	bool standingView = false;
 	if ( !player->AI_DEAD && !player->m_CrouchIntent && !phys->IsMantling() && phys->GetWaterLevel() < WATERLEVEL_WAIST ) {
 		const bool stuckCrouched = phys->IsCrouching() && !physicalCrouch;
 		if ( !stuckCrouched ) {
 			eyeComp = pm_normalviewheight.GetFloat() - player->EyeHeight();
+			standingView = true;
 		}
 	}
+	// The camera sits at the top of the player's collision box (the game's eye height is lower than that):
+	// standing it is at the top of the standing box, crouched (button, or stuck under a low ceiling) at the
+	// top of the crouched box. Only the view and the hands move up; the game's eye (AI, lightgem) stays.
+	float raise = 0.0f;
+	if ( !player->AI_DEAD ) {
+		const bool crouchedView = !standingView && phys->IsCrouching();
+		const float boxTop = crouchedView ? pm_crouchheight.GetFloat() : pm_normalheight.GetFloat();
+		const float eyeHeight = crouchedView ? pm_crouchviewheight.GetFloat() : pm_normalviewheight.GetFloat();
+		raise = Max( 0.0f, boxTop - vr_viewBelowBoxTop.GetFloat() - eyeHeight );
+	}
 	view->vrLocalOffset = localOffset;
-	view->vrLocalOffset.z -= eyeComp;
+	view->vrLocalOffset.z -= eyeComp + raise;
 
 	// footsteps from real-life walking: silent when careful, quiet when brisk, normal when fast
 	if ( dt > 0 ) {

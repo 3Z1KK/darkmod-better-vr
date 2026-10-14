@@ -80,6 +80,24 @@ public:
 	**/
 	void DeactivateParry( void );
 
+	/**
+	* VR hands: a tool held in a VR hand (sword, blackjack) swings this hidden helper's attack.
+	* The swing is followed by the VR code (game/vr/VRMelee.cpp), not by this entity's Think:
+	* it sweeps the held tool and hands what it hits to VR_Hit, which goes through the normal
+	* pipeline (parries, damage defs, armor, knockouts, sounds, alerts).
+	**/
+	void VR_BeginSwing( idActor *ActOwner, const char *AttName );
+	// change the attack (overhead, slash_lr, ...) during the swing; false if the weapon has no such attack
+	bool VR_SetAttack( const char *AttName );
+	// move the helper to the swinging tool (sounds come from there), and swap in larger head CMs on AI near it
+	void VR_MoveTo( const idVec3 &worldPos );
+	// the swept tool hit something: true if the swing goes on (a light moveable was hit), false if it stopped
+	bool VR_Hit( trace_t &tr, const idVec3 &from, const idVec3 &velDir );
+	void VR_EndSwing( void );
+	bool VR_IsSwinging( void ) const { return m_bAttacking && m_bVRSwing; }
+	// what a player's swing collides with
+	static int VR_ClipMask( void );
+
 protected:
 	/**
 	* Clears the extra melee clipmodel if it exists,
@@ -244,6 +262,11 @@ protected:
 	* List of AI whose CMs we've changed
 	**/
 	idList< idEntityPtr<idAI> >	m_AIWithModCMs;
+
+	/**
+	* VR: the attack is followed by the VR hands, not by Think (not saved: the VR code starts swings again)
+	**/
+	bool					m_bVRSwing;
 
 };
 
