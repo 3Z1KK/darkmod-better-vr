@@ -595,7 +595,19 @@ void idVRHand::HoldEntity( idPlayer *player, idEntity *ent, int bodyId, const id
 	gripDown = true;
 	slipTime = 0;
 	carryFromPouch = false;
-	if ( CanHold( ent ) ) {
+	carryKinematic = false;
+	if ( CanHold( ent ) && idVRLockUse::IsWeightless( ent ) ) {
+		// weightless (tools, keys, lockpicks): follows the hand exactly, like a coin
+		carryRelAxis = handAxisInBody.Transpose();
+		carryRelOrigin = controllerOffset - anchor * carryRelAxis;
+		carryHomeOrigin = ent->GetPhysics()->GetOrigin();
+		carryHomeAxis = ent->GetPhysics()->GetAxis();
+		carryKinematic = true;
+		interaction = IK_CARRY;
+		ent->SetAxis( carryRelAxis * input.axis );
+		ent->SetOrigin( input.pos + carryRelOrigin * input.axis );
+		ent->GetPhysics()->PutToRest();
+	} else if ( CanHold( ent ) ) {
 		grip.anchor = anchor;
 		grip.handAxis = handAxisInBody;
 		grip.controllerOffset = controllerOffset;
@@ -630,6 +642,14 @@ void idVRHand::StartInteraction( idPlayer *player ) {
 		idMat3 handAxisInTool;
 		idVRTools::GetSnapGrip( ent, anchor, handAxisInTool );
 		HoldEntity( player, ent, 0, anchor, handAxisInTool, idVec3( 0, 0, 0 ) );
+		return;
+	}
+
+	if ( idVRLockUse::IsWeightless( ent ) && CanHold( ent ) ) {
+		// a key or lockpick: held exactly where the hand touched it, weightless
+		const idVec3 bodyOrigin = ent->GetPhysics()->GetOrigin();
+		const idMat3 bodyAxisT = ent->GetPhysics()->GetAxis().Transpose();
+		HoldEntity( player, ent, 0, ( physPos - bodyOrigin ) * bodyAxisT, input.axis * bodyAxisT, ( physPos - input.pos ) * input.axis.Transpose() );
 		return;
 	}
 
@@ -676,6 +696,7 @@ void idVRHand::StartInteraction( idPlayer *player ) {
 }
 
 void idVRHand::Release( idPlayer *player, bool allowInventory ) {
+	lockUse.End( player );
 	idEntity *ent = held.GetEntity();
 	const interactionKind_t kind = interaction;
 	// the free hand continues from where the drawn hand was
@@ -699,7 +720,8 @@ void idVRHand::Release( idPlayer *player, bool allowInventory ) {
 	}
 
 	// tools go back into their holster (or fall, see vr_toolsReturnToHolster)
-	if ( kind == IK_HOLD && player->vrHands.CountHolding( ent ) == 0 && player->vrHands.OnToolRelease( player, index, ent ) ) {
+	if ( ( kind == IK_HOLD || kind == IK_CARRY ) && player->vrHands.CountHolding( ent ) == 0 && player->vrHands.OnToolRelease( player, index, ent ) ) {
+		carryKinematic = false;
 		player->vrHands.ReleaseNonSolidToPlayer( ent, true );
 		return;
 	}
@@ -720,6 +742,19 @@ void idVRHand::Release( idPlayer *player, bool allowInventory ) {
 		return;
 	}
 
+	if ( kind == IK_CARRY && carryKinematic ) {
+		// a weightless physics object: back to normal physics, with the hand's motion (throws)
+		carryKinematic = false;
+		if ( !otherHolds ) {
+			idPhysics *phys = ent->GetPhysics();
+			phys->Activate();
+			phys->SetLinearVelocity( input.vel );
+			phys->SetAngularVelocity( input.angVel );
+			player->vrHands.ReleaseNonSolidToPlayer( ent, false );
+		}
+		HandsDebug( "hand %d lets go of %s", index, ent->name.c_str() );
+		return;
+	}
 	if ( kind == IK_CARRY && !otherHolds && carryFromPouch ) {
 		// an item from the pouch that can't lie in the world on its own goes back into the pouch
 		carryFromPouch = false;
@@ -890,7 +925,10 @@ void idVRHand::Update( idPlayer *player, const vrHandInput_t &in, float dt ) {
 	if ( triggerDown && !wasTrigger && ( interaction == IK_HOLD || interaction == IK_CARRY ) ) {
 		idEntity *ent = held.GetEntity();
 		idStr script;
-		if ( ent && ent->spawnArgs.GetString( "equip_action_script", "", script ) ) {
+		if ( ent && lockUse.Begin( player, ent ) ) {
+			// a key or lockpick held against a lock: used on it like in the normal game
+			HandsDebug( "hand %d uses %s on a lock", index, ent->name.c_str() );
+		} else if ( ent && ent->spawnArgs.GetString( "equip_action_script", "", script ) ) {
 			HandsDebug( "hand %d uses %s (%s)", index, ent->name.c_str(), script.c_str() );
 			idThread *thread = player->CallScriptFunctionArgs( script.c_str(), true, 0, "e", ent );
 			if ( thread != nullptr ) {
@@ -899,14 +937,26 @@ void idVRHand::Update( idPlayer *player, const vrHandInput_t &in, float dt ) {
 		}
 	}
 
-	// carried static items follow the controller directly
+	// lockpicking goes on while the trigger is held at the lock
+	if ( lockUse.IsActive() ) {
+		if ( triggerDown && ( interaction == IK_HOLD || interaction == IK_CARRY ) ) {
+			lockUse.Continue( player, held.GetEntity() );
+		} else {
+			lockUse.End( player );
+		}
+	}
+
+	// carried items (static ones, weightless tools and keys) follow the controller directly
 	if ( interaction == IK_CARRY ) {
 		idEntity *ent = held.GetEntity();
 		if ( ent == nullptr ) {
 			interaction = IK_NONE;
 		} else {
-			ent->SetOrigin( in.pos + carryRelOrigin * in.axis );
 			ent->SetAxis( carryRelAxis * in.axis );
+			ent->SetOrigin( in.pos + carryRelOrigin * in.axis );
+			if ( carryKinematic ) {
+				ent->GetPhysics()->PutToRest();
+			}
 		}
 	}
 

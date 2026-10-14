@@ -17,6 +17,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "VRHandModel.h"
 #include "VRTools.h"
 #include "VRPouch.h"
+#include "VRLocks.h"
 
 /*
  * VR hands: the player's only way to touch the world.
@@ -134,6 +135,8 @@ private:
 	idMat3			carryHomeAxis;
 	int				slipTime = 0;
 	bool			carryFromPouch = false;		// a carried item that came out of the pouch goes back into it when let go
+	bool			carryKinematic = false;		// a weightless physics object (tool, key) that follows the hand exactly
+	idVRLockUse		lockUse;					// a key or lockpick being used on a lock (trigger held)
 
 	void			UpdateFingers( float dt );
 

@@ -328,6 +328,8 @@ bool idVRPouch::Take( idPlayer *player, idVRHand &leftHand ) {
 		if ( entityDef == nullptr || !gameLocal.SpawnEntityDef( *entityDef, &takeEnt ) || takeEnt == nullptr ) {
 			return true;
 		}
+		// locks know their keys by entity name: the copy stands for the stack's own entity
+		takeEnt->spawnArgs.Set( "vr_use_as", ent->name.c_str() );
 	}
 	if ( gameLocal.m_MissionData->MatchLocationObjectives( takeEnt ) ) {
 		takeEnt->m_bIsObjective = true;
