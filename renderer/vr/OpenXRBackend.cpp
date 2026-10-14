@@ -88,6 +88,13 @@ const float OpenXRBackend::GameUnitsToMetres = 0.02309f;
 const float OpenXRBackend::MetresToGameUnits = 1.0f / GameUnitsToMetres;
 
 void OpenXRBackend::Init() {
+	// Scissor rectangles and depth bounds are computed by the frontend for the combined head view.
+	// Each eye looks from a different position, so these view-dependent optimizations would cut away
+	// visible geometry and lighting in rectangular chunks. The engine already supports turning them off
+	// (used by r_lockView), correctness-relevant scissoring stays active.
+	r_useScissor.SetBool( false );
+	r_useDepthBoundsTest.SetBool( false );
+
 	InitBackend();
 	InitHiddenAreaMesh();
 
