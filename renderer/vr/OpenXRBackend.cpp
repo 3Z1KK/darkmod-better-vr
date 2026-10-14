@@ -88,13 +88,6 @@ const float OpenXRBackend::GameUnitsToMetres = 0.02309f;
 const float OpenXRBackend::MetresToGameUnits = 1.0f / GameUnitsToMetres;
 
 void OpenXRBackend::Init() {
-	// Scissor rectangles and depth bounds are computed by the frontend for the combined head view.
-	// Each eye looks from a different position, so these view-dependent optimizations would cut away
-	// visible geometry and lighting in rectangular chunks. The engine already supports turning them off
-	// (used by r_lockView), correctness-relevant scissoring stays active.
-	r_useScissor.SetBool( false );
-	r_useDepthBoundsTest.SetBool( false );
-
 	InitBackend();
 	InitHiddenAreaMesh();
 
@@ -168,6 +161,18 @@ void OpenXRBackend::AdjustRenderView( renderView_t *view ) {
 }
 
 void OpenXRBackend::RenderStereoView( const frameData_t *frameData ) {
+	// Scissor rectangles and depth bounds are computed by the frontend for the combined head view.
+	// Each eye looks from a different position, so these view-dependent optimizations cut away
+	// visible geometry and lighting in rectangular chunks. The engine supports turning them off
+	// (r_lockView does the same), correctness-relevant scissoring stays active.
+	// This is enforced every frame, because the r_lockView handling switches them back on.
+	if ( r_useScissor.GetBool() ) {
+		r_useScissor.SetBool( false );
+	}
+	if ( r_useDepthBoundsTest.GetBool() ) {
+		r_useDepthBoundsTest.SetBool( false );
+	}
+
 	if ( !BeginFrame() ) {
 		return;
 	}
