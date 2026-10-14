@@ -17,6 +17,8 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "local.h"
 
 #include <GLFW/glfw3.h>
+GLXFBConfig bestFbc = 0;
+XVisualInfo *visinfo = NULL;
 
 GLFWwindow *window = nullptr;
 

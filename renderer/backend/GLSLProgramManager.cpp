@@ -65,7 +65,7 @@ void GLSLProgramManager::Shutdown() {
 
 GLSLProgram * GLSLProgramManager::Load( const idStr &name, const idHashMapDict &defines ) {
 	Generator generator = [=]( GLSLProgram *program ) {
-		if( fileSystem->FindFile( idStr("glprogs/") + name + ".gs" ) != FIND_NO ) {
+		if( fileSystem->FindFile( idStr("glprogs_vr/") + name + ".gs" ) != FIND_NO ) {
 			DefaultProgramInit( program, defines, name + ".vs", name + ".fs", name + ".gs" );
 		} else {
 			DefaultProgramInit( program, defines, name + ".vs", name + ".fs", nullptr );
@@ -91,6 +91,15 @@ GLSLProgram * GLSLProgramManager::LoadFromFiles( const idStr &name, const idStr 
 GLSLProgram * GLSLProgramManager::LoadFromFiles( const idStr &name, const idStr &vertexSource, const idStr &fragmentSource, const idStr &geometrySource, const idHashMapDict &defines ) {
 	Generator generator = [=]( GLSLProgram *program ) {
 		DefaultProgramInit( program, defines, vertexSource, fragmentSource, geometrySource );
+	};
+	return LoadFromGenerator( name, generator );
+}
+
+GLSLProgram * GLSLProgramManager::LoadComputeShader( const idStr &name, const idStr &computeSource, const idHashMapDict &defines ) {
+	Generator generator = [=]( GLSLProgram *program ) {
+		program->Init();
+		program->AttachComputeShader( computeSource, defines );
+		program->Link();
 	};
 	return LoadFromGenerator( name, generator );
 }

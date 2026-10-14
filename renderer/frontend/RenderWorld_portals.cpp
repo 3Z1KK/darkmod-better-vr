@@ -1002,6 +1002,21 @@ void idRenderWorldLocal::FindViewLightsAndEntities( void ) {
 		// be a different point than initialViewAreaOrigin for subviews that
 		// may have the viewOrigin in a solid/invalid area
 		FlowViewThroughPortals( tr.viewDef->renderView.vieworg, 5, tr.viewDef->frustum );
+		// VR: the combined view origin sits behind the eyes, so also flow portals from each eye
+		// to make sure nothing visible to either eye gets culled
+		if ( tr.viewDef->renderView.eyeorg[0] != tr.viewDef->renderView.vieworg ) {
+			for ( int i = 0; i < 2; ++i ) {
+				if ( tr.viewDef->initialViewAreaOrigin == tr.viewDef->renderView.vieworg ) {
+					int eyeArea = GetAreaAtPoint( tr.viewDef->renderView.eyeorg[i] );
+					if ( eyeArea < 0 ) {
+						continue;
+					}
+					tr.viewDef->areaNum = eyeArea;
+					BuildConnectedAreas();
+				}
+				FlowViewThroughPortals( tr.viewDef->renderView.eyeorg[i], 5, tr.viewDef->frustum );
+			}
+		}
 	}
 }
 

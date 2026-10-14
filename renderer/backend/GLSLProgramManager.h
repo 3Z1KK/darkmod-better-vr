@@ -36,6 +36,8 @@ public:
 	GLSLProgram *LoadFromFiles( const idStr &name, const idStr &vertexSource, const idHashMapDict &defines = {} );
 	GLSLProgram *LoadFromFiles( const idStr &name, const idStr &vertexSource, const idStr &fragmentSource, const idHashMapDict &defines = {} );
 	GLSLProgram *LoadFromFiles( const idStr &name, const idStr &vertexSource, const idStr &fragmentSource, const idStr &geometrySource, const idHashMapDict &defines = {} );
+	// VR: load a compute shader program
+	GLSLProgram *LoadComputeShader( const idStr &name, const idStr &computeSource, const idHashMapDict &defines = {} );
 
 	// Register a GLSLProgram with a generating function.
 	GLSLProgram *LoadFromGenerator( const char *name, const Generator &generator );

@@ -243,14 +243,14 @@ LONG WINAPI MainWndProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam ) {
 				if (::GetClientRect(win32.hWnd, &rect)) {
 					int newWidth = rect.right - rect.left;
 					int newHeight = rect.bottom - rect.top;
-					if (glConfig.vidWidth != newWidth || glConfig.vidHeight != newHeight) {
-						// stgatilov: when TDM is minimized, rect is [0 0 0 0]
-						// we should never set 0, since we divide by vid[Width|Height] everywhere
-						if (newWidth > 0 || newHeight > 0) {
-							glConfig.vidWidth = newWidth;
-							glConfig.vidHeight = newHeight;
-							cvarSystem->Find( "r_fboResolution" )->SetModified();
-						}
+					// stgatilov: when TDM is minimized, rect is [0 0 0 0]
+					// we should never set 0, since we divide by window size everywhere
+					// VR: vidWidth/vidHeight is the per-eye render size, the window only shows a mirror
+					if ( newWidth > 0 && newHeight > 0 &&
+						( glConfig.windowWidth != newWidth || glConfig.windowHeight != newHeight ) ) {
+						glConfig.windowWidth = newWidth;
+						glConfig.windowHeight = newHeight;
+						cvarSystem->Find( "r_fboResolution" )->SetModified();
 					}
 				}
 			}

@@ -19,6 +19,8 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 
 #include "renderer/resources/Image.h"
 #include "Game_local.h"
+#include "../renderer/tr_local.h"
+#include "../renderer/vr/OpenXRBackend.h"
 
 static int MakePowerOfTwo( int num ) {
 	int		pot;
@@ -493,6 +495,7 @@ void idPlayerView::SingleView( idUserInterface *hud, const renderView_t *view, b
 		portalView.vieworg = PSOrigin;	// grayman #3108 - contributed by neuro & 7318
 //		portalView.vieworg = gameLocal.portalSkyEnt.GetEntity()->GetPhysics()->GetOrigin();
 		portalView.viewaxis = portalView.viewaxis * gameLocal.portalSkyEnt.GetEntity()->GetPhysics()->GetAxis();
+		portalView.initialViewaxis = hackedView.initialViewaxis * gameLocal.portalSkyEnt.GetEntity()->GetPhysics()->GetAxis();
 
 		// setup global fixup projection vars
 		if ( 1 ) {
@@ -957,7 +960,14 @@ void idPlayerView::RenderPlayerView( idUserInterface *hud )
 {
 	player->CheckForXrayOverlay();
 
-	const renderView_t *view = player->GetRenderView();
+	renderView_t playerRenderView = *player->GetRenderView();
+	playerRenderView.vrAdjusted = false;
+	if ( !frameData->render2D ) {
+		vrBackend->AdjustRenderView( &playerRenderView );
+	} else {
+		playerRenderView.eyeorg[0] = playerRenderView.eyeorg[1] = playerRenderView.vieworg;
+	}
+	const renderView_t *view = &playerRenderView;
 
 	if(g_skipViewEffects.GetBool())
 	{

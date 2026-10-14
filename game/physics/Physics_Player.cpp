@@ -23,6 +23,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "../BinaryFrobMover.h"
 #include "../FrobDoor.h"
 #include "Force_Push.h"
+#include "../../renderer/vr/OpenXRBackend.h"
 
 CLASS_DECLARATION( idPhysics_Actor, idPhysics_Player )
 END_CLASS
@@ -2765,7 +2766,8 @@ void idPhysics_Player::MovePlayer( int msec ) {
 	current.velocity -= current.pushVelocity;
 
 	// view vectors
-	viewAngles.ToVectors( &viewForward, NULL, NULL );
+	auto finalMoveAngles = vr_useMotionControllers.GetBool() ? (command.movementAxis * actualViewAngles.ToQuat()).ToAngles() : viewAngles;
+	finalMoveAngles.ToVectors( &viewForward, NULL, NULL );
 	viewForward *= clipModelAxis;
 	viewRight = gravityNormal.Cross( viewForward );
 	viewRight.Normalize();
@@ -3479,7 +3481,7 @@ void idPhysics_Player::Restore( idRestoreGame *savefile ) {
 idPhysics_Player::SetPlayerInput
 ================
 */
-void idPhysics_Player::SetPlayerInput( const usercmd_t &cmd, const idAngles &newViewAngles ) 
+void idPhysics_Player::SetPlayerInput( const usercmd_t &cmd, const idAngles &newViewAngles, const idAngles &actualViewAngles ) 
 {
 	command = cmd;
 
@@ -3505,6 +3507,7 @@ void idPhysics_Player::SetPlayerInput( const usercmd_t &cmd, const idAngles &new
 	}
 
 	viewAngles = newViewAngles;	// can't use cmd.angles cause of the delta_angles
+	this->actualViewAngles = actualViewAngles;
 
 	m_lastCommandViewYaw = command.angles[1];
 	m_lastCommandViewPitch = command.angles[0];
@@ -4009,7 +4012,7 @@ void idPhysics_Player::MantleMove()
 		viewAngles.roll = idMath::Sin(timeRadians) * rockDistance;
 		newPosition += (idMath::Sin(timeRadians) * rockDistance) * viewRight;
 		
-		if (self != NULL)
+		if (self != NULL && !vr_useMotionControllers.GetBool() )
 		{
 			static_cast<idPlayer*>(self)->SetViewAngles(viewAngles);
 		}
@@ -4038,7 +4041,7 @@ void idPhysics_Player::MantleMove()
 		newPosition += (idMath::Sin(timeRadians) * rockDistance) * viewRight;
 		viewAngles.roll = idMath::Sin(timeRadians) * rockDistance;
 
-		if (self != NULL)
+		if (self != NULL && !vr_useMotionControllers.GetBool() )
 		{
 			static_cast<idPlayer*>(self)->SetViewAngles(viewAngles);
 		}
@@ -4072,7 +4075,7 @@ void idPhysics_Player::MantleMove()
 			viewAngles.roll = 0.0f;
 		}
 
-		if (self != NULL)
+		if (self != NULL && !vr_useMotionControllers.GetBool() )
 		{
 			static_cast<idPlayer*>(self)->SetViewAngles(viewAngles);
 		}
@@ -4088,7 +4091,7 @@ void idPhysics_Player::MantleMove()
 		float timeRadians = idMath::HALF_PI * timeRatio;
 		viewAngles.roll = idMath::Cos(timeRadians) * m_mantleCancelStartRoll * cv_pm_mantle_roll_mod.GetFloat();
 
-		if (self != NULL)
+		if (self != NULL && !vr_useMotionControllers.GetBool() )
 		{
 			static_cast<idPlayer*>(self)->SetViewAngles(viewAngles);
 		}
@@ -5112,7 +5115,8 @@ void idPhysics_Player::PerformMantle()
 	m_mantledEntityID = 0;
 
 	// Forward vector is direction player is looking
-	idVec3 forward = viewAngles.ToForward();
+	auto finalMoveAngles = vr_useMotionControllers.GetBool() ? (command.movementAxis * actualViewAngles.ToQuat()).ToAngles() : viewAngles;
+	idVec3 forward = finalMoveAngles.ToForward();
 	forward.Normalize();
 
 	// We use gravity alot here...

@@ -270,6 +270,9 @@ public:
 	idAngles				spawnAngles;
 	idAngles				viewAngles;			// player view angles
 	idAngles				cmdAngles;			// player cmd angles
+	// VR support
+	mutable idAngles		actualViewAngles;
+	idVec3					frobAimIndicatorPos;  // world position of the small dot indicating frob aim in VR
 
 	int						buttonMask;
 	int						oldButtons;
@@ -665,6 +668,8 @@ public:
 	virtual bool			CanGreet() override; // grayman #3338
 
 	virtual void			GetViewPos( idVec3 &origin, idMat3 &axis ) const override;
+	void					GetViewPos( idVec3 &origin, idMat3 &axis, bool decoupledAngles ) const;
+	void					GetFrobPos( idVec3 &origin, idMat3 &axis ) const;
 	void					OffsetThirdPersonView( float angle, float range, float height, bool clip );
 
 	bool					Give( const char *statname, const char *value );
@@ -1318,7 +1323,9 @@ private:
 	void					SetSpectateOrigin( void );
 
 	void					UpdateLocation( void );
+public:
 	idUserInterface *		ActiveGui( void );
+private:
 	void					ExtractEmailInfo( const idStr &email, const char *scan, idStr &out );
 
 	void					UseVehicle( void );

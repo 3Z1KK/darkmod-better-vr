@@ -228,8 +228,9 @@ void FrameBuffer::BlitToVidSize(FrameBuffer *target, GLbitfield mask, GLenum fil
 void FrameBuffer::CreateDefaultFrameBuffer(FrameBuffer *fbo) {
 	// this doesn't actually create a new framebuffer object, but creates a class that represents the "default" (0) framebuffer
 	fbo->fbo = 0;
-	fbo->width = glConfig.vidWidth;
-	fbo->height = glConfig.vidHeight;
+	// VR: the window only shows a mirror of the headset view, so its size differs from the render size
+	fbo->width = glConfig.windowWidth;
+	fbo->height = glConfig.windowHeight;
 	fbo->msaa = 0;
 	fbo->initialized = true;
 }

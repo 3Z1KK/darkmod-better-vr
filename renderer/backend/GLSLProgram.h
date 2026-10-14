@@ -39,6 +39,7 @@ public:
 	void AttachVertexShader( const char *sourceFile, const idHashMapDict &defines = {} );
 	void AttachGeometryShader( const char *sourceFile, const idHashMapDict &defines = {} );
 	void AttachFragmentShader( const char *sourceFile, const idHashMapDict &defines = {} );
+	void AttachComputeShader( const char *sourceFile, const idHashMapDict &defines = {} );
 
 	void BindAttribLocation( unsigned int location, const char *attribName );
 	void BindUniformBlockLocation( unsigned int location, const char *blockName );

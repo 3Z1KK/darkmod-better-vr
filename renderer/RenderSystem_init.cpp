@@ -41,7 +41,7 @@ idCVar r_glDebugOutput( "r_glDebugOutput", "0", CVAR_RENDERER | CVAR_INTEGER | C
 idCVar r_glDebugContext( "r_glDebugContext", "0", CVAR_RENDERER | CVAR_BOOL | CVAR_ARCHIVE, "If enabled, create a GL debug context." );
 idCVar r_multiSamples( "r_multiSamples", "0", CVAR_RENDERER | CVAR_ARCHIVE | CVAR_INTEGER, "number of antialiasing samples" );
 idCVar r_displayRefresh( "r_displayRefresh", "0", CVAR_RENDERER | CVAR_INTEGER | CVAR_NOCHEAT, "optional display refresh rate option for vid mode", 0.0f, 200.0f );
-idCVar r_fullscreen( "r_fullscreen", "2", CVAR_RENDERER | CVAR_ARCHIVE | CVAR_INTEGER, "0 = windowed, 1 = full screen, 2 = fullscreen windowed" );
+idCVar r_fullscreen( "r_fullscreen", "0", CVAR_RENDERER | CVAR_ARCHIVE | CVAR_INTEGER, "0 = windowed, 1 = full screen, 2 = fullscreen windowed" );
 idCVar r_singleTriangle( "r_singleTriangle", "0", CVAR_RENDERER | CVAR_BOOL, "only draw a single triangle per primitive" );
 idCVar r_checkBounds( "r_checkBounds", "0", CVAR_RENDERER | CVAR_BOOL, "compare all surface bounds with precalculated ones" );
 
@@ -79,8 +79,9 @@ idCVar r_ignoreGLErrors( "r_ignoreGLErrors",
 #endif
 	, CVAR_RENDERER | CVAR_BOOL, "ignore GL errors" );
 idCVar r_finish( "r_finish", "0", CVAR_RENDERER | CVAR_BOOL, "force a call to glFinish() every frame" );
+// VR: frame pacing is done by the headset runtime, the desktop mirror window must never wait for monitor vsync
 idCVar r_swapInterval(
-	"r_swapInterval", "1", CVAR_RENDERER | CVAR_ARCHIVE,
+	"r_swapInterval", "0", CVAR_RENDERER | CVAR_ROM,
 	"Sets Vsync control mode (if supported):\n"
 	"  0 --- disable Vsync\n"
 	"  1 --- enable Vsync\n"
@@ -376,6 +377,10 @@ void R_InitOpenGL( void ) {
 		r_customWidth.SetInteger( 800 );
 		r_customHeight.SetInteger( 600 );
 	}
+
+	// VR: remember the actual window size; vidWidth/vidHeight are later changed to the per-eye render size
+	glConfig.windowWidth = glConfig.vidWidth;
+	glConfig.windowHeight = glConfig.vidHeight;
 
 	// input and sound systems need to be tied to the new window
 	Sys_InitInput();

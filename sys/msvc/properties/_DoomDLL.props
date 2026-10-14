@@ -25,9 +25,11 @@
     <ClCompile>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
+      <AdditionalIncludeDirectories>$(SolutionDir)ThirdParty\artefacts\openxr\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>xinput9_1_0.lib;bcrypt.lib;Shell32.lib;Gdi32.lib;Advapi32.lib;dbghelp.lib;dinput8.lib;iphlpapi.lib;odbc32.lib;odbccp32.lib;winmm.lib;wsock32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dxgi.lib;d3d11.lib;openxr_loader.lib;xinput9_1_0.lib;bcrypt.lib;Shell32.lib;Gdi32.lib;Advapi32.lib;dbghelp.lib;dinput8.lib;iphlpapi.lib;odbc32.lib;odbccp32.lib;winmm.lib;wsock32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)ThirdParty\artefacts\openxr\lib\win$(TdmBitness)_s_vc_rel_mt;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <SubSystem>Windows</SubSystem>
       <StackReserveSize>16777216</StackReserveSize>
       <StackCommitSize>16777216</StackCommitSize>
@@ -41,11 +43,15 @@
       <EnableDpiAwareness>PerMonitorHighDPIAware</EnableDpiAwareness>
     </Manifest>
     <PostBuildEvent>
-      <Command>robocopy $(SolutionDir)glprogs $(OutDir)glprogs * /s /nfl /ndl /njh /njs
-if %errorlevel% leq 3 exit 0</Command>
+      <Command>
+        xcopy /y $(SolutionDir)ThirdParty\artefacts\openxr\bin\win64_s_vc15_rel_mt\openxr_loader.dll $(OutDir)
+        robocopy $(SolutionDir)glprogs $(OutDir)glprogs_vr * /s /nfl /ndl /njh /njs
+        robocopy $(SolutionDir)assets $(OutDir) * /s /nfl /ndl /njh /njs
+        if %errorlevel% leq 3 exit 0
+      </Command>
     </PostBuildEvent>
     <PostBuildEvent>
-      <Message>Copy glprogs (shaders)</Message>
+      <Message>Copy DLLs and assets</Message>
     </PostBuildEvent>
     <PreBuildEvent>
       <Command>cd $(ProjectDir)

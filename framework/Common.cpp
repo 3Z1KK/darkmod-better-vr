@@ -2956,6 +2956,7 @@ void idCommonLocal::InitGame( void )
 
 		cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "exec autoexec.cfg\n" );
 	}
+	cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "exec autoexec_vr.cfg\n" );
 
 	// reload the language dictionary now that we've loaded config files
 	cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "reloadLanguage\n" );

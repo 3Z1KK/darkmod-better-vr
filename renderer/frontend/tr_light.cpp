@@ -1265,7 +1265,7 @@ R_AddDrawSurf
 =================
 */
 void R_AddDrawSurf( const srfTriangles_t *tri, const viewEntity_t *space, const renderEntity_t *renderEntity,
-					const idMaterial *material, const idScreenRect &scissor, const float soft_particle_radius, bool deferred )
+					const idMaterial *material, const idScreenRect &scissor, const float soft_particle_radius, bool deferred, bool isGui )
 {
 	drawSurf_t		*drawSurf;
 	const float		*shaderParms;
@@ -1278,7 +1278,7 @@ void R_AddDrawSurf( const srfTriangles_t *tri, const viewEntity_t *space, const 
 	drawSurf->dynamicImageOverride = nullptr;
 	drawSurf->scissorRect = scissor;
 	drawSurf->sort = material->GetSort();
-	drawSurf->dsFlags = 0;
+	drawSurf->dsFlags = isGui ? DSF_GUI_SURF : 0;
 	if ( soft_particle_radius != -1.0f ) {	// #3878
 		drawSurf->dsFlags |= DSF_SOFT_PARTICLE;
 		drawSurf->particle_radius = soft_particle_radius;

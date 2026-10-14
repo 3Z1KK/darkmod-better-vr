@@ -221,6 +221,10 @@ public:
 	short		jx;								// joystick x
 	short		jy;								// joystick y
 
+	idQuat		movementAxis;
+	idQuat		frobAxis;
+	idVec3		frobPos;
+
 public:
 	void		ByteSwap();						// on big endian systems, byte swap the shorts and ints
 	bool		operator==( const usercmd_t &rhs ) const;

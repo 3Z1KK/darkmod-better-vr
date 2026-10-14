@@ -402,6 +402,15 @@ idSessionLocal::SetPbMenuGuiVars
 void idSessionLocal::SetPbMenuGuiVars( void ) {
 }
 
+void idSessionLocal::ToggleMenu() {
+	if ( guiActive != guiMainMenu ) {
+		console->Close();
+		StartMenu();
+	} else if ( mapSpawned ) {
+		ExitMenu();
+	}
+}
+
 /*
 ===============
 idSessionLocal::SetMainMenuGuiVars
@@ -506,6 +515,16 @@ bool idSessionLocal::HandleSaveGameMenuCommand( idCmdArgs &args, int &icmd ) {
 		return true;
 	} 
 
+	if ( !idStr::Icmp( cmd, "quickSave" ) ) {
+		extern const idStr GetNextQuicksaveFilename();
+		idStr saveGameName = GetNextQuicksaveFilename();
+		common->Printf( "Saving %s\n", saveGameName.c_str() );
+		sessLocal.SaveGame( saveGameName.c_str() );
+		SetSaveGameGuiVars();
+		guiActive->StateChanged( com_frameTime );
+		return true;
+	}
+
 	if ( !idStr::Icmp( cmd, "deleteGame" ) ) {
 		int choice = guiActive->State().GetInt( "loadgame_sel_0" );
 		if ( choice >= 0 && choice < loadGameList.Num() ) {
@@ -563,6 +582,22 @@ bool idSessionLocal::HandleSaveGameMenuCommand( idCmdArgs &args, int &icmd ) {
 			idStr time = date.Right( date.Length() - tab - 1);
 			guiActive->SetStateString( "saveGameDate", date.Left( tab ) );
 			guiActive->SetStateString( "saveGameTime", time );
+		} else {
+			idStr suggestedSaveName = "save";
+			for ( int i = 0; i < 1000; ++i ) {
+				suggestedSaveName = idStr::Fmt( "save_%03d", i );
+				bool found = false;
+				for ( auto existingName : loadGameList ) {
+					if ( suggestedSaveName.Icmp( existingName ) == 0 ) {
+						found = true;
+						break;
+					}
+				}
+				if ( !found )
+					break;
+			}
+
+			guiActive->SetStateString( "saveGameName", suggestedSaveName );
 		}
 		return true;
 	}

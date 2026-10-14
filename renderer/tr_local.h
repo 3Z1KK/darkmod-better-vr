@@ -141,6 +141,7 @@ idMat4 RB_GetShaderTextureMatrix( const float *shaderRegisters, const textureSta
 static const int DSF_VIEW_INSIDE_SHADOW	= 1;
 static const int DSF_SOFT_PARTICLE = 2; // #3878
 static const int DSF_BLOCK_SELF_SHADOWS = 4; // #6571: used when light interaction and self-shadows are computed in one draw call
+static const int DSF_GUI_SURF = 1 << 30; // VR: GUI surface whose modelview must be recomputed per eye
 
 struct viewLight_s;
 
@@ -583,6 +584,11 @@ typedef struct viewDef_s {
 	bool				IsLightGem() const {
 		return renderView.viewID < 0;
 	}
+
+	// VR: view matrix of the combined (head) view computed by the frontend,
+	// and transform from the current eye's view space back to head view space
+	idMat4				headView;
+	idMat4				eyeToHead;
 } viewDef_t;
 
 
@@ -710,6 +716,13 @@ typedef struct {
 	// commands can be inserted at the front if needed, as for required
 	// dynamically generated textures
 	emptyCommand_t		*cmdHead, *cmdTail;		// may be of other command type based on commandId
+
+	// VR extras
+	idVec3				mouseAimPosition;
+	float				mouseAimSize;
+	bool				render2D;  // if set, do not render in stereoscopic mode, but only to 2D overlay (e.g. cutscenes)
+	idVec3				cameraPosition;
+	idAngles			cameraAngles;
 } frameData_t;
 
 extern	frameData_t		*frameData;
@@ -1417,7 +1430,7 @@ viewEntity_t *R_SetEntityDefViewEntity( idRenderEntityLocal *def );
 viewLight_t *R_SetLightDefViewLight( idRenderLightLocal *def );
 
 void R_AddDrawSurf( const srfTriangles_t *tri, const viewEntity_t *space, const renderEntity_t *renderEntity,
-					const idMaterial *shader, const idScreenRect &scissor, const float soft_particle_radius = -1.0f, bool deferred = false ); // soft particles in #3878
+					const idMaterial *shader, const idScreenRect &scissor, const float soft_particle_radius = -1.0f, bool deferred = false, bool gui = false ); // soft particles in #3878
 
 drawSurf_t *R_PrepareLightSurf( const srfTriangles_t *tri, const viewEntity_t *space,
 					const idMaterial *shader, const idScreenRect &scissor, bool viewInsideShadow, bool blockSelfShadows );

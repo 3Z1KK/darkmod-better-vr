@@ -55,6 +55,7 @@ typedef struct glconfig_s {
 	bool				geometryShaderAvailable;
 	bool				bufferStorageAvailable; // persistent mapping
 	bool				stencilTexturing;		// stencil SS
+	int					windowWidth, windowHeight;
 
 	// values of various GL limits
 	int					maxTextureSize;

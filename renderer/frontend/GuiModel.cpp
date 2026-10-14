@@ -185,7 +185,7 @@ void idGuiModel::EmitSurface( guiModelSurface_t *surf, float modelMatrix[16], fl
 	guiSpace->weaponDepthHack = depthHack;
 
 	// add the surface, which might recursively create another gui
-	R_AddDrawSurf( tri, guiSpace, &renderEntity, surf->material, tr.viewDef->scissor );
+	R_AddDrawSurf( tri, guiSpace, &renderEntity, surf->material, tr.viewDef->scissor, -1.0f, false, true );
 
 	// the just added surface is the last in view (it was non-deferred call)
 	drawSurf_t *drawSurf = tr.viewDef->drawSurfs[tr.viewDef->numDrawSurfs - 1];

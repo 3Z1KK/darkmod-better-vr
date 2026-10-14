@@ -35,6 +35,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include <numeric>
 
 #include "../sys/sys_padinput.h"
+#include "../renderer/vr/OpenXRBackend.h"
 
 /*
 ===============================================================================
@@ -5074,6 +5075,10 @@ void idPlayer::BobCycle( const idVec3 &pushVelocity ) {
 	}
 	viewBobAngles.roll += delta;
 
+	// VR: don't want player bob
+	viewBobAngles.pitch = 0;
+	viewBobAngles.roll = 0;
+
 	// calculate position for view bobbing
 	viewBob.Zero();
 
@@ -5105,6 +5110,7 @@ void idPlayer::BobCycle( const idVec3 &pushVelocity ) {
 	if ( bob > 6 ) {
 		bob = 6;
 	}
+	bob = 0; // VR: don't want player bob
 	viewBob[2] += bob;
 
 	// add fall height
@@ -5142,6 +5148,7 @@ idPlayer::SetViewAngles
 void idPlayer::SetViewAngles( const idAngles &angles ) {
 	UpdateDeltaViewAngles( angles );
 	viewAngles = angles;
+	actualViewAngles.yaw = angles.yaw;
 }
 
 /*
@@ -5196,6 +5203,20 @@ void idPlayer::UpdateViewAngles( void )
 	}
 	if ( !centerView.IsDone( gameLocal.time ) ) {
 		TestAngles.pitch = centerView.GetCurrentValue(gameLocal.time);
+	}
+
+	if (vr_useMotionControllers.GetBool()) {
+		actualViewAngles.yaw = idMath::AngleNormalize180( actualViewAngles.yaw + TestAngles.yaw - viewAngles.yaw);
+		// adjust the viewAngles to look at the frob position
+		idVec3 forward = frobAimIndicatorPos - firstPersonViewOrigin;
+		forward.Normalize();
+		float pitch = idMath::ASin( -forward.z );
+		float cp = idMath::Cos( pitch );
+		float yaw = idMath::ASin( forward.y / cp );
+		if ( forward.x / cp < 0 ) {
+			yaw = idMath::PI - yaw;
+		}
+		TestAngles = idAngles( RAD2DEG(pitch), RAD2DEG(yaw), 0 );
 	}
 
 	// clamp the pitch
@@ -6919,7 +6940,7 @@ void idPlayer::Move( void )
 	}
 
 	physicsObj.SetDebugLevel( g_debugMove.GetBool() );
-	physicsObj.SetPlayerInput( usercmd, viewAngles );
+	physicsObj.SetPlayerInput( usercmd, viewAngles, actualViewAngles );
 
 	// FIXME: physics gets disabled somehow
 	BecomeActive( TH_PHYSICS );
@@ -7441,7 +7462,7 @@ void idPlayer::UpdateUnderWaterEffects()
 			}
 			else
 			{
-				underWaterGUIHandle = CreateOverlay(overlay.c_str(), LAYER_UNDERWATER);
+				//underWaterGUIHandle = CreateOverlay(overlay.c_str(), LAYER_UNDERWATER);
 			}
 			underWaterEffectsActive = true;
 		}
@@ -7808,6 +7829,15 @@ void idPlayer::RouteGuiMouse( idUserInterface *gui ) {
 		command = gui->HandleEvent( &ev, gameLocal.time );
 		oldMouseX = usercmd.mx;
 		oldMouseY = usercmd.my;
+	}
+	if ( usercmd.jx != 0 || usercmd.jy != 0 ) {
+		extern idCVar in_padMouseSpeed;
+		float speed = in_padMouseSpeed.GetFloat() / 640.f * renderSystem->GetScreenWidth();
+		// hack: we want the original axis deflection, without inversed axes if enabled
+		int x, y;
+		Sys_GetCombinedAxisDeflection( x, y );
+		ev = sys->GenerateMouseMoveEvent( speed * x / 64.f, -speed * y / 64.f );
+		command = gui->HandleEvent( &ev, gameLocal.time );
 	}
 	if ( usercmd.jx != 0 || usercmd.jy != 0 ) {
 		extern idCVar in_padMouseSpeed;
@@ -8639,6 +8669,10 @@ idPlayer::GetViewPos
 ===============
 */
 void idPlayer::GetViewPos( idVec3 &origin, idMat3 &axis ) const {
+	GetViewPos( origin, axis, false );
+}
+
+void idPlayer::GetViewPos( idVec3 &origin, idMat3 &axis, bool decoupledAngles ) const {
 	idAngles angles;
 
 	if ( usePeekView ) // grayman #4882
@@ -8658,11 +8692,49 @@ void idPlayer::GetViewPos( idVec3 &origin, idMat3 &axis ) const {
 		origin = GetEyePosition() + viewBob;
 		angles = viewAngles + viewBobAngles + physicsObj.GetViewLeanAngles() + playerView.AngleOffset();
 
+		if ( decoupledAngles && !vr_useMotionControllers.GetBool() ) {
+			// in VR, mouse pitch and roll added to the view is confusing, so leave it out
+			actualViewAngles.pitch = 0;
+			actualViewAngles.roll = 0;
+
+			// figure out yaw adjustment:
+			// we want the player to be able to move the mouse horizontally within a certain corridor
+			// before affecting the view to have an easier time selecting and aiming with the mouse without
+			// triggering a lot of short and jittery, motion-inducing rotation on the player view
+			if ( angles.yaw - actualViewAngles.yaw > 180 ) {
+				actualViewAngles.yaw += 360;
+			} else if ( angles.yaw - actualViewAngles.yaw < -180 ) {
+				actualViewAngles.yaw -= 360;
+			}
+			float yawDiff = angles.yaw - actualViewAngles.yaw;
+			float maxYawDiff = vr_decoupledMouseYawAngle.GetFloat();
+			if ( idMath::Fabs( yawDiff ) >= maxYawDiff ) {
+				actualViewAngles.yaw = angles.yaw - idMath::ClampFloat( -maxYawDiff, maxYawDiff, yawDiff );
+			}
+
+			angles = actualViewAngles;
+		}
+		if (decoupledAngles && vr_useMotionControllers.GetBool()) {
+			angles = actualViewAngles;
+		}
+
 		axis = angles.ToMat3() * physicsObj.GetGravityAxis();
 
 		// adjust the origin based on the camera nodal distance (eye distance from neck)
 		origin += physicsObj.GetGravityNormal() * g_viewNodalZ.GetFloat();
 		origin += axis[0] * g_viewNodalX.GetFloat() + axis[2] * g_viewNodalZ.GetFloat();
+
+		frameData->cameraPosition = origin;
+		frameData->cameraAngles = angles;
+	}
+}
+
+void idPlayer::GetFrobPos( idVec3 &origin, idMat3 &axis ) const {
+	if ( vr_useMotionControllers.GetBool() ) {
+		origin = GetEyePosition() + usercmd.frobPos * actualViewAngles.ToMat3();
+		axis = ( usercmd.frobAxis * actualViewAngles.ToQuat() ).ToMat3();
+	} else {
+		GetViewPos( origin, axis );
 	}
 }
 
@@ -8795,6 +8867,7 @@ void idPlayer::CalculateRenderView( void ) {
 
 	// check if we should be drawing from a camera's POV
 	if ( !noclip && (gameLocal.GetCamera() || privateCameraView) ) {
+		frameData->render2D = true;
 		// get origin, axis, and fov
 		if ( privateCameraView ) {
 			privateCameraView->GetViewParms( renderView );
@@ -8802,6 +8875,8 @@ void idPlayer::CalculateRenderView( void ) {
 			gameLocal.GetCamera()->GetViewParms( renderView );
 		}
 	} else {
+		bool spyglassInUse = m_immobilization.GetInt( "spyglass" ) != 0;
+		frameData->render2D = vr_force2DRender.GetInteger() == 2 || spyglassInUse;
 		if ( g_stopTime.GetBool() ) {
 			renderView->vieworg = firstPersonViewOrigin;
 			renderView->viewaxis = firstPersonViewAxis;
@@ -8818,6 +8893,8 @@ void idPlayer::CalculateRenderView( void ) {
 		} else {
 			renderView->vieworg = firstPersonViewOrigin;
 			renderView->viewaxis = firstPersonViewAxis;
+
+			GetViewPos( renderView->vieworg, renderView->viewaxis, vr_decoupleMouseMovement.GetBool() && !spyglassInUse );
 
 			// set the viewID to the clientNum + 1, so we can suppress the right player bodies and
 			// allow the right player view weapons
@@ -11047,6 +11124,9 @@ void idPlayer::Event_WasDamaged( void )
 
 void idPlayer::Event_StartZoom(float duration, float startFOV, float endFOV)
 {
+	if ( vr_disableZoomAnimations.GetBool() ) {
+		startFOV = endFOV;
+	}
 	// greebo: Start the new transition from startFOV >> endFOV, this enables the idInterpolate
 	zoomFov.Init(gameLocal.time, duration, startFOV, endFOV);
 }
@@ -11055,6 +11135,10 @@ void idPlayer::Event_EndZoom(float duration)
 {
 	// greebo: Make a transition from the current FOV back to the default FOV, this enables the idInterpolate
 	zoomFov.Init(gameLocal.time, duration, zoomFov.GetCurrentValue(gameLocal.time), DefaultFov());
+
+	if ( vr_disableZoomAnimations.GetBool() ) {
+		zoomFov.SetStartValue( DefaultFov() );
+	}
 }
 
 void idPlayer::Event_ResetZoom()
@@ -11097,14 +11181,6 @@ void idPlayer::PerformFrobCheckInternal()
 		return;
 	}
 
-	// greebo: Don't run the frobcheck when we're dragging items around
-	if (m_bGrabberActive)
-	{
-		if (bFrobHelperActive)
-			m_FrobHelper.Hide();
-		return;
-	}
-
 	// ishtvan: Don't run if frob hilighting is disabled
 	// TODO: Should we just add this functionality to EIM_FROB and get rid of EIM_FROBHILIGHT?
 	if ( GetImmobilization() & EIM_FROB_HILIGHT )
@@ -11118,11 +11194,24 @@ void idPlayer::PerformFrobCheckInternal()
 	idVec3 eyePos = GetEyePosition();
 	float maxFrobDistance = g_Global.m_MaxFrobDistance;
 
+	frameData->mouseAimSize = vr_aimIndicatorSize.GetFloat();
+	bool isUsingBow = weapon.GetEntity() && weapon.GetEntity()->IsRanged();// && m_immobilization.GetInt( "arrow_weapon" ) != 0;
+	if ( isUsingBow ) {
+		// VR: allow aim indicator to reach further for better ranged aim
+		maxFrobDistance *= vr_aimIndicatorRangedMultiplier.GetFloat();
+		frameData->mouseAimSize = vr_aimIndicatorRangedSize.GetFloat();
+	}
+
 	// greebo: Let the currently selected inventory item affect the frob distance (lockpicks, for instance)
 	CInventoryItemPtr curItem = InventoryCursor()->GetCurrentItem();
 
 	idVec3 start = eyePos;
-	idVec3 end = start + viewAngles.ToForward() * maxFrobDistance;
+	idAngles angles = viewAngles;
+	if ( vr_useMotionControllers.GetBool() ) {
+		start = eyePos + usercmd.frobPos * actualViewAngles.ToMat3();
+		angles = ( usercmd.frobAxis * actualViewAngles.ToQuat() ).ToAngles();
+	}
+	idVec3 end = start + angles.ToForward() * maxFrobDistance;
 
 	// Do frob trace first, along view axis, record distance traveled
 	// Frob collision mask:
@@ -11132,7 +11221,16 @@ void idPlayer::PerformFrobCheckInternal()
 	trace_t trace;
 	gameLocal.clip.TracePoint(trace, start, end, cm, this);
 	
-	float traceDist = g_Global.m_MaxFrobDistance * trace.fraction;
+	float traceDist = maxFrobDistance * trace.fraction;
+	frobAimIndicatorPos = start + angles.ToForward() * traceDist;
+	frameData->mouseAimPosition = frobAimIndicatorPos;
+
+	if (m_bGrabberActive)
+	{
+		if (bFrobHelperActive)
+			m_FrobHelper.Hide();
+		return;
+	}
 
 	bool bEntityAlreadyFrobbed = false;
 
@@ -11232,7 +11330,7 @@ void idPlayer::PerformFrobCheckInternal()
 	idClip_EntityList frobRangeEnts;
 	int numFrobEnt = gameLocal.clip.EntitiesTouchingBounds(frobBounds, -1, frobRangeEnts);
 
-	idVec3 vecForward = viewAngles.ToForward();
+	idVec3 vecForward = angles.ToForward();
 	float bestDot = 0;
 	idEntity* bestEnt = NULL;
 
@@ -11260,7 +11358,7 @@ void idPlayer::PerformFrobCheckInternal()
 
 		// Get the frob distance from the entity candidate
 		float frobDist = ent->m_FrobDistance;
-		idVec3 delta = ent->GetPhysics()->GetOrigin() - eyePos;
+		idVec3 delta = ent->GetPhysics()->GetOrigin() - start;
 		
 		float entDistance = delta.LengthFast();
 

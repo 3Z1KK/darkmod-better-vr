@@ -19,6 +19,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "renderer/backend/FrameBuffer.h"
 #include "renderer/backend/RenderBackend.h"
 #include "renderer/backend/FrameBufferManager.h"
+#include "renderer/vr/OpenXRBackend.h"
 
 idRenderSystemLocal	tr;
 idRenderSystem	*renderSystem = &tr;
@@ -166,12 +167,16 @@ void R_IssueRenderCommands( frameData_t *frameData, bool swapBuffers ) {
 	// r_skipRender is usually more usefull, because it will still
 	// draw 2D graphics
 	if ( !r_skipBackEnd.GetBool() ) {
-		RB_ExecuteBackEndCommands( cmds );
+		if ( swapBuffers ) {
+			// VR: a full frame is rendered once per eye plus once for the UI overlay,
+			// then mirrored to the desktop window and submitted to the headset (this also swaps buffers)
+			vrBackend->RenderStereoView( frameData );
+		} else {
+			// one-off captures (e.g. savegame screenshots) are not part of the headset frame
+			RB_ExecuteBackEndCommands( cmds );
+		}
 	}
 	R_ClearCommandChain( frameData );
-
-	if ( swapBuffers )
-		RB_SwapBuffers();
 }
 
 /*
@@ -757,6 +762,7 @@ void idRenderSystemLocal::EndFrame( int *frontEndMsec, int *backEndMsec ) {
 	try {
 		RB_CopyDebugPrimitivesToBackend();
 		common->SetErrorIndirection( true );
+		vrBackend->PrepareFrame();
 		session->ActivateFrontend();
 		frameBuffers->BeginFrame();
 		// start the back end up again with the new command list

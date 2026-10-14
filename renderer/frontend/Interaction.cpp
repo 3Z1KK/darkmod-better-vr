@@ -1215,7 +1215,7 @@ static bool R_PotentiallyInsideInfiniteShadow( const srfTriangles_t *occluder,
 	// expand the bounds to account for the near clip plane, because the
 	// view could be mathematically outside, but if the near clip plane
 	// chops a volume edge, the zpass rendering would fail.
-	float	znear = r_znear.GetFloat();
+	float	znear = r_znear.GetFloat() + tr.viewDef->renderView.nearZOffset;
 	if ( tr.viewDef->renderView.cramZNear ) {
 		znear *= 0.25f;
 	}
@@ -1355,8 +1355,9 @@ bool idInteraction::IsPotentiallyVisible( idScreenRect &shadowScissor ) {
 	// try to cull the interaction by portals (culled away if empty scissor is returned)
 	// as a by-product, calculate more precise shadow scissor rectangle
 	shadowRect = CalcInteractionScissorRectangle( tr.viewDef->viewFrustum );
-	shadowScissor.Intersect(shadowRect);
-	if ( shadowScissor.IsEmpty() ) {
+	idScreenRect test = shadowScissor;
+	test.Intersect(shadowRect);
+	if ( test.IsEmpty() ) {
 		return false;
 	}
 
@@ -1416,7 +1417,6 @@ void idInteraction::AddActiveInteraction( void ) {
 	viewEntity_t *	vEntity;
 	idScreenRect	lightScissor;
 	idVec3			localLightOrigin;
-	idVec3			localViewOrigin;
 
 	vLight = lightDef->viewLight;
 	vEntity = entityDef->viewEntity;
@@ -1450,7 +1450,6 @@ void idInteraction::AddActiveInteraction( void ) {
 		CreateInteraction( model );
 	}
 	R_GlobalPointToLocal( vEntity->modelMatrix, lightDef->globalLightOrigin, localLightOrigin );
-	R_GlobalPointToLocal( vEntity->modelMatrix, tr.viewDef->renderView.vieworg, localViewOrigin );
 
 	// calculate the scissor as the intersection of the light and model rects
 	// this is used for light triangles, but not for shadow triangles
@@ -1595,7 +1594,14 @@ void idInteraction::AddActiveInteraction( void ) {
 			}
 
 			// see if we can avoid using the shadow volume caps
-			bool inside = R_PotentiallyInsideInfiniteShadow( sint->ambientTris, localViewOrigin, localLightOrigin );
+			idVec3 localViewOrigin, localLeftEyeOrigin, localRightEyeOrigin;
+			R_GlobalPointToLocal( vEntity->modelMatrix, tr.viewDef->renderView.vieworg, localViewOrigin );
+			R_GlobalPointToLocal( vEntity->modelMatrix, tr.viewDef->renderView.eyeorg[0], localLeftEyeOrigin );
+			R_GlobalPointToLocal( vEntity->modelMatrix, tr.viewDef->renderView.eyeorg[1], localRightEyeOrigin );
+			bool inside = R_PotentiallyInsideInfiniteShadow( sint->ambientTris, localViewOrigin, localLightOrigin )
+				|| R_PotentiallyInsideInfiniteShadow( sint->ambientTris, localLeftEyeOrigin, localLightOrigin )
+				|| R_PotentiallyInsideInfiniteShadow( sint->ambientTris, localRightEyeOrigin, localLightOrigin );
+			inside = true;
 
 			// stgatilov: depthbounds of shadow volumes are passed to glDepthBoundsTest in stencil shadows rendering
 			// so we cannot reduce them to shadow volume geometry, and here we restore them to light's depthbounds

@@ -874,6 +874,17 @@ void idRenderWorldLocal::RenderScene( const renderView_t &renderView ) {
 	//
 	viewDef_t		*parms = (viewDef_t *)R_ClearedFrameAlloc( sizeof( *parms ) );
 	parms->renderView = renderView;
+	if ( !parms->renderView.vrAdjusted ) {
+		// VR: views that were not set up for the headset (cameras, previews, ...) get neutral eye data,
+		// any uninitialized values here could otherwise break projection and culling
+		renderView_t &rv = parms->renderView;
+		rv.eyeorg[0] = rv.eyeorg[1] = rv.vieworg;
+		rv.initialVieworg = rv.vieworg;
+		rv.initialViewaxis = rv.viewaxis;
+		rv.fixedOrigin = false;
+		rv.isMirror = false;
+		rv.nearZOffset = 0.0f;
+	}
 
 	R_LockView_FrontendStart( *parms );
 

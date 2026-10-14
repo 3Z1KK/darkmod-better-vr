@@ -41,6 +41,9 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #define GL_ARB_texture_storage					1	//core since 4.2
 #define GL_ARB_multi_draw_indirect				1	//core since 4.3
 #define GL_ARB_vertex_attrib_binding			1	//core since 4.3
+#define GL_NV_shading_rate_image				1	// VR: variable rate shading for fixed foveated rendering
+#define GL_ARB_compute_shader					1	//core since 4.3
+#define GL_ARB_shader_image_load_store			1	//core since 4.2
 #include "glad.h"
 
 #ifdef _WIN32
@@ -52,6 +55,8 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #define WGL_ARB_pixel_format					1
 // Optional extensions:
 #define WGL_EXT_swap_control					1
+#define WGL_NV_DX_interop						1
+#define WGL_NV_DX_interop2						1
 #include "glad_wgl.h"
 #endif
 

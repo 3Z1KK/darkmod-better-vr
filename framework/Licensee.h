@@ -34,7 +34,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #define BASE_TDM					"darkmod"
 
 // filenames
-#define CONFIG_FILE					"Darkmod.cfg"
+#define CONFIG_FILE					"darkmod_vr.cfg"
 #define KEYBINDS_FILE				"DarkmodKeybinds.cfg"
 #define PADBINDS_FILE				"DarkmodPadbinds.cfg"
 

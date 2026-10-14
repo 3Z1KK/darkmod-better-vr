@@ -663,6 +663,15 @@
     <ClInclude Include="renderer\resources\ParticleSystem_def.h" />
     <ClInclude Include="renderer\tr_local.h" />
     <ClInclude Include="renderer\VertexCache.h" />
+    <ClInclude Include="renderer\vr\D3D11Helper.h" />
+    <ClInclude Include="renderer\vr\OpenXRBackend.h" />
+    <ClInclude Include="renderer\vr\OpenXRInput.h" />
+    <ClInclude Include="renderer\vr\OpenXRSwapchain.h" />
+    <ClInclude Include="renderer\vr\OpenXRSwapchainDX.h" />
+    <ClInclude Include="renderer\vr\OpenXRSwapchainGL.h" />
+    <ClInclude Include="renderer\vr\VRFoveatedRendering.h" />
+    <ClInclude Include="renderer\vr\xr_loader.h" />
+    <ClInclude Include="renderer\vr\xr_math.h" />
     <ClInclude Include="sound\efxlib.h" />
     <ClInclude Include="sound\snd_efxpresets.h" />
     <ClInclude Include="sound\snd_local.h" />
@@ -1321,6 +1330,14 @@
     <ClCompile Include="renderer\resources\tr_font.cpp" />
     <ClCompile Include="renderer\tr_main.cpp" />
     <ClCompile Include="renderer\VertexCache.cpp" />
+    <ClCompile Include="renderer\vr\D3D11Helper.cpp" />
+    <ClCompile Include="renderer\vr\OpenXRBackend.cpp" />
+    <ClCompile Include="renderer\vr\OpenXRInput.cpp" />
+    <ClCompile Include="renderer\vr\OpenXRSwapchainDX.cpp" />
+    <ClCompile Include="renderer\vr\OpenXRSwapchainGL.cpp" />
+    <ClCompile Include="renderer\vr\VRFoveatedRendering.cpp" />
+    <ClCompile Include="renderer\vr\xr_loader.cpp" />
+    <ClCompile Include="renderer\vr\xr_math.cpp" />
     <ClCompile Include="sound\snd_cache.cpp" />
     <ClCompile Include="sound\snd_decoder.cpp" />
     <ClCompile Include="sound\snd_efxfile.cpp" />
@@ -1657,6 +1674,36 @@
     <ResourceCompile Include="sys\win32\rc\SoundEditor.rc">
       <ExcludedFromBuild>true</ExcludedFromBuild>
     </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="hlprogs\flip.ps.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.0</ShaderModel>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">PS_Flip</VariableName>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">hlprogs/PS_Flip.h</HeaderFileOutput>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug with inlines|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug with inlines|x64'">5.0</ShaderModel>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">PS_Flip</VariableName>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">hlprogs/PS_Flip.h</HeaderFileOutput>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Debug with inlines|x64'">PS_Flip</VariableName>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug with inlines|x64'">hlprogs/PS_Flip.h</HeaderFileOutput>
+    </FxCompile>
+    <FxCompile Include="hlprogs\flip.vs.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.0</ShaderModel>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">VS_Flip</VariableName>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">hlprogs/VS_Flip.h</HeaderFileOutput>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug with inlines|x64'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug with inlines|x64'">5.0</ShaderModel>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">VS_Flip</VariableName>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">hlprogs/VS_Flip.h</HeaderFileOutput>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Debug with inlines|x64'">VS_Flip</VariableName>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug with inlines|x64'">hlprogs/VS_Flip.h</HeaderFileOutput>
+    </FxCompile>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

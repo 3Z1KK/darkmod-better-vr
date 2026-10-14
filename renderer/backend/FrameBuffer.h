@@ -41,6 +41,8 @@ public:
 	void BlitTo(FrameBuffer *target, GLbitfield mask, GLenum filter = GL_LINEAR);
 	void BlitToVidSize(FrameBuffer *target, GLbitfield mask, GLenum filter, int x, int y, int w, int h);
 
+	bool IsDefault() const { return fbo == 0; }
+
 	int Width() const { return width; }
 	int Height() const { return height; }
 	int MultiSamples() const { return msaa; }

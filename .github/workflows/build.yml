@@ -58,10 +58,13 @@ jobs:
 
           New-Item -ItemType Directory -Force ci-out/dist | Out-Null
           if ($ok) {
+            # everything the build placed in the game folder: exe, openxr loader, VR shaders and assets
             Copy-Item ..\darkmod\*.exe ci-out/dist -ErrorAction SilentlyContinue
             Copy-Item ..\darkmod\*.dll ci-out/dist -ErrorAction SilentlyContinue
-            if (Test-Path ..\darkmod\glprogs) { Copy-Item -Recurse ..\darkmod\glprogs ci-out/dist/glprogs }
-            if (Test-Path vr_assets) { Copy-Item -Recurse vr_assets/* ci-out/dist }
+            Copy-Item ..\darkmod\*.cfg ci-out/dist -ErrorAction SilentlyContinue
+            foreach ($d in @("glprogs", "glprogs_vr", "guis")) {
+              if (Test-Path ..\darkmod\$d) { Copy-Item -Recurse ..\darkmod\$d ci-out/dist/$d }
+            }
           }
           Get-ChildItem -Recurse ci-out/dist | Select-Object FullName, Length | Out-String | Tee-Object -Append $log
           "RESULT: $(if ($ok) {'SUCCESS'} else {'FAILURE'})" | Tee-Object -Append $log

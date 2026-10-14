@@ -1035,8 +1035,9 @@ void R_SetupProjection( viewDef_t &viewDef ) {
 		jitterx = jittery = 0;
 	}
 
-	float zNear = r_znear.GetFloat();
-	if ( tr.viewDef->renderView.cramZNear ) {
+	// VR: the combined head view sits slightly behind the eyes, so its near plane is pushed forward
+	float zNear = r_znear.GetFloat() + viewDef.renderView.nearZOffset;
+	if ( viewDef.renderView.cramZNear ) {
 		zNear *= 0.25;
 	}
 
@@ -1084,7 +1085,7 @@ void R_SetupViewFrustum( viewDef_t &viewDef ) {
 	// eventually, plane five will be the rear clipping plane for fog
 	float dNear, dFar, dLeft, dUp;
 
-	dNear = r_znear.GetFloat();
+	dNear = r_znear.GetFloat() + viewDef.renderView.nearZOffset;
 
 	if ( viewDef.renderView.cramZNear ) {
 		dNear *= 0.25f;

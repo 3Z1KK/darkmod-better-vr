@@ -34,17 +34,17 @@ idCVar r_remoteLimitResolutionByScreenSize(
 );
 
 
-typedef struct {
+/*typedef struct {
 	idVec3		origin;
 	idMat3		axis;
-} orientation_t;
+} orientation_t;*/
 
 /*
 =================
 R_MirrorPoint
 =================
 */
-static void R_MirrorPoint( const idVec3 in, orientation_t *surface, orientation_t *camera, idVec3 &out ) {
+void R_MirrorPoint( const idVec3 in, orientation_t *surface, orientation_t *camera, idVec3 &out ) {
 	int		i;
 	idVec3	local;
 	idVec3	transformed;
@@ -66,7 +66,7 @@ static void R_MirrorPoint( const idVec3 in, orientation_t *surface, orientation_
 R_MirrorVector
 =================
 */
-static void R_MirrorVector( const idVec3 in, orientation_t *surface, orientation_t *camera, idVec3 &out ) {
+void R_MirrorVector( const idVec3 in, orientation_t *surface, orientation_t *camera, idVec3 &out ) {
 	int		i;
 	float	d;
 
@@ -281,8 +281,14 @@ static viewDef_t *R_MirrorViewBySurface( drawSurf_t *drawSurf ) {
 	camera.axis[1] = surface.axis[1];
 	camera.axis[2] = surface.axis[2];
 
+	parms->renderView.mirrorCamera = camera;
+	parms->renderView.mirrorSurface = surface;
+	parms->renderView.isMirror = true;
+
 	// set the mirrored origin and axis
 	R_MirrorPoint( tr.viewDef->renderView.vieworg, &surface, &camera, parms->renderView.vieworg );
+	R_MirrorPoint( tr.viewDef->renderView.eyeorg[0], &surface, &camera, parms->renderView.eyeorg[0] );
+	R_MirrorPoint( tr.viewDef->renderView.eyeorg[1], &surface, &camera, parms->renderView.eyeorg[1] );
 
 	R_MirrorVector( tr.viewDef->renderView.viewaxis[0], &surface, &camera, parms->renderView.viewaxis[0] );
 	R_MirrorVector( tr.viewDef->renderView.viewaxis[1], &surface, &camera, parms->renderView.viewaxis[1] );
@@ -514,6 +520,7 @@ void R_PortalRender() {
 	parms->isMirrorGen = false;
 
 	parms->renderView.viewaxis = parms->renderView.viewaxis * gameLocal.GetLocalPlayer()->playerView.ShakeAxis();
+	parms->renderView.initialViewaxis = parms->renderView.initialViewaxis * gameLocal.GetLocalPlayer()->playerView.ShakeAxis();
 
 	// grayman #3108 - contributed by neuro & 7318
 	idVec3 diff, currentEyePos, PSOrigin, Zero;
@@ -552,7 +559,12 @@ void R_PortalRender() {
 		// end neuro & 7318
 
 		parms->renderView.vieworg = PSOrigin;	// grayman #3108 - contributed by neuro & 7318
+		parms->renderView.eyeorg[0] = PSOrigin;
+		parms->renderView.eyeorg[1] = PSOrigin;
 		parms->renderView.viewaxis = tr.viewDef->renderView.viewaxis * gameLocal.portalSkyEnt.GetEntity()->GetPhysics()->GetAxis();
+		parms->renderView.initialVieworg = PSOrigin;
+		parms->renderView.initialViewaxis = tr.viewDef->renderView.initialViewaxis * gameLocal.portalSkyEnt.GetEntity()->GetPhysics()->GetAxis();
+		parms->renderView.fixedOrigin = true;
 
 		// set up viewport, adjusted for resolution and OpenGL style 0 at the bottom
 		tr.RenderViewToViewport( parms->renderView, parms->viewport );
@@ -699,6 +711,10 @@ bool R_Lightgem_Render() {
 		0.0f, 1.0f, 0.0f,
 		-1.0f, 0.0f, 0.0f
 	); 
+	// VR: must reset the view org, as otherwise we get the position of the headset
+	lightgemRv.vieworg = tr.viewDef->renderView.initialVieworg;
+	lightgemRv.eyeorg[0] = tr.viewDef->renderView.initialVieworg;
+	lightgemRv.eyeorg[1] = tr.viewDef->renderView.initialVieworg;
 
 	// Give the rv the current ambient light values (obsolete #5449)
 	lightgemRv.shaderParms[2] = 0.0f;

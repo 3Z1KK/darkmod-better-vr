@@ -236,15 +236,15 @@ endif()
 
 if (UNIX)
 	if (CMAKE_SIZEOF_VOID_P EQUAL 8)
-		set_target_properties(TheDarkMod PROPERTIES OUTPUT_NAME "thedarkmod.x64")
+		set_target_properties(TheDarkMod PROPERTIES OUTPUT_NAME "thedarkmodvr.x64")
 	else ()
-		set_target_properties(TheDarkMod PROPERTIES OUTPUT_NAME "thedarkmod.x86")
+		set_target_properties(TheDarkMod PROPERTIES OUTPUT_NAME "thedarkmodvr.x86")
 	endif ()
 elseif (MSVC)
 	if (CMAKE_SIZEOF_VOID_P EQUAL 8)
-		set_target_properties(TheDarkMod PROPERTIES OUTPUT_NAME "TheDarkModx64")
+		set_target_properties(TheDarkMod PROPERTIES OUTPUT_NAME "TheDarkModVRx64")
 	else ()
-		set_target_properties(TheDarkMod PROPERTIES OUTPUT_NAME "TheDarkMod")
+		set_target_properties(TheDarkMod PROPERTIES OUTPUT_NAME "TheDarkModVR")
 	endif ()
 endif ()
 # ffmpeg dep was compiled without -fPIC, so need to disable PIE on 64bit builds
@@ -317,7 +317,9 @@ if (COPY_EXE)
 	add_custom_command(
 			TARGET TheDarkMod POST_BUILD
 			COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:TheDarkMod> "${GAME_DIR}"
-			COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/glprogs" "${GAME_DIR}/glprogs"
+			COMMAND ${CMAKE_COMMAND} -E copy "${openxr_BINARY}" "${GAME_DIR}"
+			COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/glprogs" "${GAME_DIR}/glprogs_vr"
+			COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_SOURCE_DIR}/assets/" "${GAME_DIR}"
 	)
 	if (UNIX)
 		add_custom_command(

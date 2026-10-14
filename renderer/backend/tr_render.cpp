@@ -17,6 +17,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #pragma hdrstop
 
 #include "renderer/tr_local.h"
+#include "renderer/vr/OpenXRBackend.h"
 #include "renderer/backend/VertexArrayState.h"
 #include "renderer/backend/FrameBuffer.h"
 #include "renderer/backend/GLSLProgramManager.h"
@@ -368,6 +369,10 @@ void RB_BeginDrawingView( bool colorIsBackground ) {
 		qglClearStencil( 128 );
 		qglClear( GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT );
 		qglEnable( GL_DEPTH_TEST );
+
+		// VR: mask out pixels that are not visible through the headset lenses
+		vrBackend->DrawHiddenAreaMeshToDepth();
+		vrBackend->DrawRadialDensityMaskToDepth();
 	} else {
 		qglDisable( GL_DEPTH_TEST );
 		qglDisable( GL_STENCIL_TEST );

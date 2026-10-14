@@ -238,6 +238,11 @@ typedef enum {							// #define RENDERTOOLS_SKIP_ID			-1 // DARKMOD_LG_VIEWID
 } viewID_t;								// The lightgem viewid defines the viewid that is to be used for the lightgem surfacetestmodel
 										// static const int	DARKMOD_LG_VIEWID =	-1;
 
+typedef struct {
+	idVec3		origin;
+	idMat3		axis;
+} orientation_t;
+
 typedef struct renderView_s {
 	// player views will set this to a non-zero integer for model suppress / allow
 	// subviews (mirrors, cameras, etc) will always clear it to zero
@@ -250,6 +255,9 @@ typedef struct renderView_s {
 	idVec3					vieworg;
 	idMat3					viewaxis;			// transformation matrix, view looks down the positive X axis
 
+	// VR: eye positions
+	idVec3					eyeorg[2];
+
 	bool					cramZNear;			// for cinematics, we want to set ZNear much lower
 	bool					forceUpdate;		// for an update 
 	bool					isOverlay;			// stgatilov: rendered on top of previous color contents, don't clear
@@ -258,6 +266,16 @@ typedef struct renderView_s {
 	int						time;
 	float					shaderParms[MAX_GLOBAL_SHADER_PARMS];		// can be used in any way by shader
 	const idMaterial		*globalMaterial;							// used to override everything draw
+
+	// VR support
+	idVec3					initialVieworg;
+	idMat3					initialViewaxis;
+	bool					fixedOrigin;
+	orientation_t			mirrorSurface;
+	orientation_t			mirrorCamera;
+	bool					isMirror;
+	float					nearZOffset;
+	bool					vrAdjusted;			// set by the VR backend for the player view; other views are rendered unchanged
 } renderView_t;
 
 
