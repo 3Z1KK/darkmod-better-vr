@@ -42,11 +42,11 @@ jobs:
           }
 
           if ($env:CACHE_HIT -ne 'true') {
-            Run "install svn" { choco install svn -y --no-progress }
-            $svn = (Get-ChildItem -Recurse -Filter svn.exe "C:\Program Files\SlikSvn","C:\ProgramData\chocolatey" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
-            if (-not $svn) { $svn = "svn" }
+            # the windows runner image already ships an svn client
+            $svn = (Get-Command svn -ErrorAction SilentlyContinue).Source
+            if (-not $svn) { Run "install svn" { choco install tortoisesvn -y --no-progress --params "/ADDLOCAL=ALL" }; $svn = "C:\Program Files\TortoiseSVN\bin\svn.exe" }
             "svn = $svn" | Tee-Object -Append $log
-            Run "svn export artefacts" { & $svn export --force --non-interactive --trust-server-cert-failures=unknown-ca,cn-mismatch,expired,not-yet-valid,other https://svn.thedarkmod.com/publicsvn/darkmod_src/branches/release214/ThirdParty/artefacts ThirdParty/artefacts }
+            Run "svn export artefacts" { & $svn export --force --quiet --non-interactive --trust-server-cert-failures=unknown-ca,cn-mismatch,expired,not-yet-valid,other https://svn.thedarkmod.com/publicsvn/darkmod_src/branches/release214/ThirdParty/artefacts ThirdParty/artefacts }
           }
           Get-ChildItem ThirdParty/artefacts -ErrorAction SilentlyContinue | Out-String | Tee-Object -Append $log
 
