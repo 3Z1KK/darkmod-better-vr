@@ -20,3 +20,25 @@ vr/hand_placeholder
 		blue	Parm2
 	}
 }
+
+// VR light crystal on the left hand: glows with the player's light level (shaderParm0-2), replaces the HUD lightgem
+vr/light_crystal
+{
+	noShadows
+	noSelfShadow
+	twoSided
+	{
+		blend	diffusemap
+		map		_white
+		red		0.25
+		green	0.22
+		blue	0.18
+	}
+	{
+		blend	add
+		map		_white
+		red		Parm0
+		green	Parm1
+		blue	Parm2
+	}
+}

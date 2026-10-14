@@ -28,14 +28,18 @@ idCVar vr_handsEnable( "vr_handsEnable", "1", CVAR_GAME | CVAR_BOOL, "VR: intera
 idCVar vr_handTouchRadius( "vr_handTouchRadius", "2.5", CVAR_GAME | CVAR_FLOAT, "VR: radius (game units) around the palm that counts as touching" );
 idCVar vr_handCollisionSize( "vr_handCollisionSize", "1.5", CVAR_GAME | CVAR_FLOAT, "VR: half size (game units) of the hand's collision box against the world" );
 idCVar vr_handCollision( "vr_handCollision", "1", CVAR_GAME | CVAR_BOOL, "VR: free hands are stopped by walls and solid objects" );
-idCVar vr_handLiftMass( "vr_handLiftMass", "20", CVAR_GAME | CVAR_FLOAT, "VR: the heaviest mass one hand can just hold up against gravity (hand strength)" );
-idCVar vr_handWristLever( "vr_handWristLever", "6", CVAR_GAME | CVAR_FLOAT, "VR: wrist strength: maximum torque = hand strength x this lever (game units)" );
+idCVar vr_handLiftMass( "vr_handLiftMass", "12", CVAR_GAME | CVAR_FLOAT, "VR: the heaviest mass one hand can hold up against gravity" );
+idCVar vr_handMoveForce( "vr_handMoveForce", "4000", CVAR_GAME | CVAR_FLOAT, "VR: how hard a hand can push/pull a held object around (mass x units/s^2): light things follow exactly, heavy things lag" );
+idCVar vr_handWristAccel( "vr_handWristAccel", "800", CVAR_GAME | CVAR_FLOAT, "VR: how fast the wrist can turn a held object (rad/s^2) for very light objects" );
+idCVar vr_handWristMassFactor( "vr_handWristMassFactor", "0.04", CVAR_GAME | CVAR_FLOAT, "VR: how much mass slows the wrist: accel = vr_handWristAccel / (1 + mass x this)" );
+idCVar vr_handPushMass( "vr_handPushMass", "3", CVAR_GAME | CVAR_FLOAT, "VR: effective mass of a free hand bumping into loose objects" );
+idCVar vr_handPushBounce( "vr_handPushBounce", "0.2", CVAR_GAME | CVAR_FLOAT, "VR: bounciness of hand-object bumps" );
 idCVar vr_handTwoHandWrist( "vr_handTwoHandWrist", "0.35", CVAR_GAME | CVAR_FLOAT, "VR: wrist torque factor per hand when both hands hold the same object" );
 idCVar vr_handFollowTime( "vr_handFollowTime", "0.03", CVAR_GAME | CVAR_FLOAT, "VR: time (s) in which a held object should close its distance to the hand" );
 idCVar vr_handRotFollowTime( "vr_handRotFollowTime", "0.03", CVAR_GAME | CVAR_FLOAT, "VR: time (s) in which a held object should close its angle to the hand" );
 idCVar vr_handMaxSpeed( "vr_handMaxSpeed", "1500", CVAR_GAME | CVAR_FLOAT, "VR: maximum speed (units/s) a hand can drive a held object to" );
-idCVar vr_gripBreakDistance( "vr_gripBreakDistance", "16", CVAR_GAME | CVAR_FLOAT, "VR: grip slips if the grip point is this far (units) from the controller" );
-idCVar vr_gripBreakTime( "vr_gripBreakTime", "300", CVAR_GAME | CVAR_INTEGER, "VR: time (ms) the grip point may stay too far before the grip slips" );
+idCVar vr_gripBreakDistance( "vr_gripBreakDistance", "30", CVAR_GAME | CVAR_FLOAT, "VR: grip slips if the grip point is this far (units) from the controller" );
+idCVar vr_gripBreakTime( "vr_gripBreakTime", "500", CVAR_GAME | CVAR_INTEGER, "VR: time (ms) the grip point may stay too far before the grip slips" );
 idCVar vr_gripPressThreshold( "vr_gripPressThreshold", "0.6", CVAR_GAME | CVAR_FLOAT, "VR: grip/trigger value that counts as pressed" );
 idCVar vr_gripReleaseThreshold( "vr_gripReleaseThreshold", "0.35", CVAR_GAME | CVAR_FLOAT, "VR: grip/trigger value that counts as released" );
 idCVar vr_stomachDrop( "vr_stomachDrop", "20", CVAR_GAME | CVAR_FLOAT, "VR: stomach inventory zone, distance (units) below the head" );
@@ -137,6 +141,54 @@ namespace {
 		model->AddSurface( surf );
 
 		handModels[hand] = model;
+		return model;
+	}
+
+	// small octahedron crystal
+	idRenderModel *crystalModel = nullptr;
+	idRenderModel *GetCrystalModel() {
+		if ( crystalModel != nullptr ) {
+			return crystalModel;
+		}
+		const float s = 0.55f;
+		const idVec3 pts[6] = { idVec3( s, 0, 0 ), idVec3( -s, 0, 0 ), idVec3( 0, s * 0.8f, 0 ), idVec3( 0, -s * 0.8f, 0 ), idVec3( 0, 0, s * 1.4f ), idVec3( 0, 0, -s * 0.6f ) };
+		const int faces[8][3] = { {0,2,4}, {2,1,4}, {1,3,4}, {3,0,4}, {2,0,5}, {1,2,5}, {3,1,5}, {0,3,5} };
+		idRenderModel *model = renderModelManager->AllocModel();
+		model->InitEmpty( "_vr_light_crystal" );
+		modelSurface_t surf;
+		surf.id = 0;
+		surf.material = declManager->FindMaterial( "vr/light_crystal" );
+		surf.geometry = model->AllocSurfaceTriangles( 24, 24 );
+		srfTriangles_t *tri = surf.geometry;
+		tri->numVerts = 0;
+		tri->numIndexes = 0;
+		tri->bounds.Clear();
+		for ( int f = 0; f < 8; f++ ) {
+			const idVec3 &a = pts[faces[f][0]], &b = pts[faces[f][1]], &c = pts[faces[f][2]];
+			idVec3 n = ( b - a ).Cross( c - a );
+			n.Normalize();
+			idVec3 t = b - a;
+			t.Normalize();
+			const idVec3 *p[3] = { &a, &b, &c };
+			for ( int v = 0; v < 3; v++ ) {
+				idDrawVert &dv = tri->verts[tri->numVerts];
+				dv.Clear();
+				dv.xyz = *p[v];
+				dv.st.Set( v == 1 ? 1.0f : 0.0f, v == 2 ? 1.0f : 0.0f );
+				dv.normal = n;
+				dv.tangents[0] = t;
+				dv.tangents[1] = n.Cross( t );
+				dv.color[0] = dv.color[1] = dv.color[2] = dv.color[3] = 255;
+				tri->indexes[tri->numIndexes++] = tri->numVerts;
+				tri->bounds.AddPoint( *p[v] );
+				tri->numVerts++;
+			}
+		}
+		tri->tangentsCalculated = true;
+		tri->facePlanesCalculated = false;
+		tri->generateNormals = false;
+		model->AddSurface( surf );
+		crystalModel = model;
 		return model;
 	}
 
@@ -319,6 +371,7 @@ void idVRHand::MoveFreeHand( idPlayer *player ) {
 			if ( tr.fraction >= 1.0f ) {
 				break;
 			}
+			BumpObject( player, tr );
 			move *= ( 1.0f - tr.fraction );
 			move -= ( move * tr.c.normal ) * tr.c.normal;
 		}
@@ -334,6 +387,50 @@ void idVRHand::MoveFreeHand( idPlayer *player ) {
 	}
 	physPos = input.eye;
 	physValid = true;
+}
+
+/*
+ * A free hand ran into something. Loose objects get the same collision impulse the physics engine gives
+ * two colliding bodies, with the hand as a body of vr_handPushMass moving at the controller's velocity:
+ * bottles tip over, light things get knocked away, heavy things barely move.
+ */
+void idVRHand::BumpObject( idPlayer *player, const trace_t &tr ) {
+	if ( tr.c.entityNum < 0 || tr.c.entityNum >= ENTITYNUM_WORLD ) {
+		return;
+	}
+	idEntity *ent = gameLocal.entities[tr.c.entityNum];
+	if ( ent == nullptr || ent == player || ent->IsHidden() ) {
+		return;
+	}
+	idPhysics *phys = ent->GetPhysics();
+	if ( !phys->IsType( idPhysics_RigidBody::Type ) && !phys->IsType( idPhysics_AF::Type ) ) {
+		return;
+	}
+	if ( player->vrHands.CountHolding( ent ) > 0 ) {
+		return;
+	}
+	int bodyId = 0;
+	if ( ent->IsType( idAFEntity_Base::Type ) ) {
+		bodyId = Max( 0, static_cast<idAFEntity_Base *>( ent )->BodyForClipModelId( tr.c.id ) );
+	}
+	impactInfo_t info;
+	phys->GetImpactInfo( bodyId, tr.c.point, &info );
+	if ( info.invMass <= 0.0f ) {
+		return;
+	}
+	// the normal points from the object towards the hand
+	const idVec3 &n = tr.c.normal;
+	const float approach = ( input.vel - info.velocity ) * n;
+	if ( approach > -1.0f ) {
+		return;	// resting against it or moving away
+	}
+	const float handInvMass = 1.0f / Max( 0.1f, vr_handPushMass.GetFloat() );
+	const float denominator = info.invMass + ( ( info.invInertiaTensor * info.position.Cross( n ) ).Cross( info.position ) * n ) + handInvMass;
+	const float magnitude = -( 1.0f + vr_handPushBounce.GetFloat() ) * approach / denominator;
+	ent->m_SetInMotionByActor = player;
+	ent->m_MovedByActor = player;
+	ent->ApplyImpulse( player, bodyId, tr.c.point, -magnitude * n );
+	HandsDebug( "hand %d bumps %s (%.0f)", index, ent->name.c_str(), magnitude );
 }
 
 void idVRHand::FindContact( idEntity *ent, int bodyId ) {
@@ -650,6 +747,10 @@ void idVRHands::Shutdown() {
 	if ( !initialized ) {
 		return;
 	}
+	if ( crystalHandle != -1 && gameRenderWorld ) {
+		gameRenderWorld->FreeEntityDef( crystalHandle );
+	}
+	crystalHandle = -1;
 	hands[0].Shutdown();
 	hands[1].Shutdown();
 	for ( int i = 0; i < highlighted.Num(); i++ ) {
@@ -801,18 +902,20 @@ void idVRHands::UpdateHighlights() {
 }
 
 /*
- * Every hand that holds a body pulls its grip point towards the controller and turns the body with its wrist.
- * Both are velocity changes computed from the body's real mass and inertia, capped by what a hand can do in
- * one frame, so the result follows physics: a bottle sits in the hand, a chair held by a leg is heavy at the
- * far end and tips, a crate barely moves with one hand and lifts slowly with two.
+ * Every hand that holds a body moves it like a real hand would:
+ *  - the wrist turns the body around the grip point (the object stays anchored in the hand). Weight slows
+ *    turning only a little.
+ *  - the arm holds the body up against gravity, up to what one hand can lift
+ *  - the arm moves the grip point towards the controller with a limited force: light things follow the hand
+ *    exactly, heavy things lag, drag and can barely be yanked. Two hands add up.
+ * All of it is computed from the body's real mass from the game files.
  */
 void idVRHands::DriveHeldObjects( float dt ) {
 	if ( dt <= 0 ) {
 		return;
 	}
 	const idVec3 gravity = gameLocal.GetGravity();
-	const float handForce = vr_handLiftMass.GetFloat() * gravity.Length();
-	const float wristTorque = handForce * vr_handWristLever.GetFloat();
+	const float g = gravity.Length();
 
 	for ( int h = 0; h < 2; h++ ) {
 		idVRHand &hand = hands[h];
@@ -832,23 +935,23 @@ void idVRHands::DriveHeldObjects( float dt ) {
 		}
 
 		idPhysics *phys = ent->GetPhysics();
-		const idVec3 bodyOrigin = phys->GetOrigin( bodyId );
 		const idMat3 bodyAxis = phys->GetAxis( bodyId );
+		idVec3 gripPoint;
+		idMat3 unused;
+		hand.GetGripWorld( gripPoint, unused );
 		impactInfo_t info;
-		phys->GetImpactInfo( bodyId, bodyOrigin, &info );
+		phys->GetImpactInfo( bodyId, gripPoint, &info );
 		if ( info.invMass <= 0.0f ) {
 			continue;
 		}
-		const idMat3 invInertia = info.invInertiaTensor;
-		idMat3 inertia = invInertia;
-		if ( !inertia.InverseSelf() ) {
-			continue;
-		}
+		const float mass = 1.0f / info.invMass;
+		const idVec3 r = info.position;		// grip point relative to the centre of mass
 		idVec3 linVel = phys->GetLinearVelocity( bodyId );
 		idVec3 angVel = phys->GetAngularVelocity( bodyId );
 		const vrHandInput_t &in = hand.GetInput();
+		const float share = 1.0f / numHands;
 
-		// wrist: turn the body so the hand keeps its grip orientation
+		// 1. wrist: turn the body around the grip point so the hand keeps its grip orientation
 		{
 			const idMat3 desired = hand.GetGrip().handAxis.Transpose() * in.axis;
 			idVec3 axisSum( 0, 0, 0 );
@@ -863,52 +966,46 @@ void idVRHands::DriveHeldObjects( float dt ) {
 				rotError = axisSum * angle;
 			}
 			const idVec3 wantAngVel = in.angVel + rotError / Max( vr_handRotFollowTime.GetFloat(), dt );
-			idVec3 dL = inertia * ( wantAngVel - angVel );
-			const float maxL = wristTorque * ( numHands > 1 ? vr_handTwoHandWrist.GetFloat() : 1.0f ) * dt;
-			if ( dL.LengthSqr() > maxL * maxL ) {
-				dL.Normalize();
-				dL *= maxL;
+			idVec3 dAng = ( wantAngVel - angVel ) * ( numHands > 1 ? vr_handTwoHandWrist.GetFloat() : 1.0f );
+			const float maxDAng = vr_handWristAccel.GetFloat() / ( 1.0f + mass * vr_handWristMassFactor.GetFloat() ) * dt;
+			if ( dAng.LengthSqr() > maxDAng * maxDAng ) {
+				dAng.Normalize();
+				dAng *= maxDAng;
 			}
-			angVel += invInertia * dL;
+			angVel += dAng;
+			// pivot on the grip point: the turn alone doesn't move the grip point
+			linVel += r.Cross( dAng );
 		}
 
-		// arm: pull the grip point towards the controller
+		// 2. hold it up, as far as this hand can lift its share
 		{
-			idVec3 gripPoint;
-			idMat3 unused;
-			hand.GetGripWorld( gripPoint, unused );
-			impactInfo_t pointInfo;
-			phys->GetImpactInfo( bodyId, gripPoint, &pointInfo );
-			const idVec3 r = pointInfo.position;
-			const idVec3 pointVel = linVel + angVel.Cross( r );
+			const float support = idMath::ClampFloat( 0.0f, 1.0f, vr_handLiftMass.GetFloat() / ( mass * share ) );
+			linVel -= gravity * ( dt * share * support );
+		}
 
-			// hold against gravity too (shared between the hands), as far as the hand's strength allows
-			idVec3 wantVel = in.vel + ( hand.GetGripTarget() - gripPoint ) / Max( vr_handFollowTime.GetFloat(), dt ) - gravity * ( dt / numHands );
+		// 3. arm: move the grip point towards the controller, limited by the hand's force against the mass
+		{
+			const idVec3 pointVel = linVel + angVel.Cross( r );
+			idVec3 wantVel = in.vel + ( hand.GetGripTarget() - gripPoint ) / Max( vr_handFollowTime.GetFloat(), dt );
 			const float maxSpeed = vr_handMaxSpeed.GetFloat();
 			if ( wantVel.LengthSqr() > maxSpeed * maxSpeed ) {
 				wantVel.Normalize();
 				wantVel *= maxSpeed;
 			}
-
-			// impulse at the grip point that gives the point the wanted velocity change (K = point mass matrix)
-			const idMat3 skew( 0.0f, -r.z, r.y, r.z, 0.0f, -r.x, -r.y, r.x, 0.0f );
-			idMat3 K = mat3_identity * info.invMass - skew * invInertia * skew;
-			if ( K.InverseSelf() ) {
-				idVec3 impulse = K * ( wantVel - pointVel );
-				const float maxImpulse = handForce * dt;
-				if ( impulse.LengthSqr() > maxImpulse * maxImpulse ) {
-					impulse.Normalize();
-					impulse *= maxImpulse;
-				}
-				linVel += impulse * info.invMass;
-				angVel += invInertia * r.Cross( impulse );
+			idVec3 dVel = ( wantVel - pointVel ) * share;
+			const float maxDVel = vr_handMoveForce.GetFloat() / mass * dt;
+			if ( dVel.LengthSqr() > maxDVel * maxDVel ) {
+				dVel.Normalize();
+				dVel *= maxDVel;
 			}
+			linVel += dVel;
 		}
 
 		phys->SetLinearVelocity( linVel, bodyId );
 		phys->SetAngularVelocity( angVel, bodyId );
 		phys->Activate();
 	}
+	(void)g;
 }
 
 void idVRHands::Update( idPlayer *player ) {
@@ -961,4 +1058,44 @@ void idVRHands::PostThink( idPlayer *player ) {
 	}
 	hands[0].UpdateVisual();
 	hands[1].UpdateVisual();
+	UpdateLightCrystal( player );
+}
+
+/*
+ * The light crystal on the back of the left hand glows as brightly as the player is lit (the lightgem).
+ * Placeholder until the hands have fingers and it becomes a ring.
+ */
+void idVRHands::UpdateLightCrystal( idPlayer *player ) {
+	const idVRHand &hand = hands[0];
+	if ( !gameRenderWorld ) {
+		return;
+	}
+	if ( !hand.IsTracked() || !IsActive() ) {
+		if ( crystalHandle != -1 ) {
+			gameRenderWorld->FreeEntityDef( crystalHandle );
+			crystalHandle = -1;
+		}
+		return;
+	}
+	const float target = idMath::ClampFloat( 0.0f, 1.0f, player->GetCurrentLightgemValue() / float( DARKMOD_LG_MAX ) );
+	crystalLevel += ( target - crystalLevel ) * idMath::ClampFloat( 0.0f, 1.0f, lastDt * 8.0f );
+	const float glow = 0.02f + 0.98f * crystalLevel * crystalLevel;
+
+	idRenderModel *model = GetCrystalModel();
+	memset( &crystalEntity, 0, sizeof( crystalEntity ) );
+	crystalEntity.hModel = model;
+	crystalEntity.origin = hand.GetVisualPos() + idVec3( -3.0f, 0.0f, 1.8f ) * hand.GetVisualAxis();
+	crystalEntity.axis = hand.GetVisualAxis();
+	crystalEntity.bounds = model->Bounds();
+	crystalEntity.noShadow = true;
+	crystalEntity.suppressSurfaceInViewID = VID_LIGHTGEM;
+	crystalEntity.shaderParms[SHADERPARM_RED] = glow * 1.0f;
+	crystalEntity.shaderParms[SHADERPARM_GREEN] = glow * 0.85f;
+	crystalEntity.shaderParms[SHADERPARM_BLUE] = glow * 0.55f;
+	crystalEntity.shaderParms[SHADERPARM_ALPHA] = 1.0f;
+	if ( crystalHandle == -1 ) {
+		crystalHandle = gameRenderWorld->AddEntityDef( &crystalEntity );
+	} else {
+		gameRenderWorld->UpdateEntityDef( crystalHandle, &crystalEntity );
+	}
 }

@@ -82,6 +82,9 @@ public:
 	interactionKind_t GetInteraction() const { return interaction; }
 	const grip_t &	GetGrip() const { return grip; }
 	const vrHandInput_t &GetInput() const { return input; }
+	bool			IsTracked() const { return tracked; }
+	const idVec3 &	GetVisualPos() const { return visualPos; }
+	const idMat3 &	GetVisualAxis() const { return visualAxis; }
 
 	// where the controller wants the grip point to be
 	idVec3			GetGripTarget() const;
@@ -96,6 +99,7 @@ private:
 	void			StartInteraction( idPlayer *player );
 	void			MoveFreeHand( idPlayer *player );
 	void			FindContact( idEntity *ent, int bodyId );
+	void			BumpObject( idPlayer *player, const trace_t &tr );
 	void			UpdateRenderEntity();
 
 	int				index = 0;
@@ -147,6 +151,7 @@ public:
 
 private:
 	void			UpdateHighlights();
+	void			UpdateLightCrystal( idPlayer *player );
 	void			DriveHeldObjects( float dt );
 	void			UpdatePendingClipRestores( idPlayer *player );
 	bool			IsInStomachZone( const idVec3 &handLocal, const idVec3 &headLocal, const idMat3 &headLocalAxis ) const;
@@ -156,6 +161,11 @@ private:
 	int				lastTime = 0;
 	float			lastDt = 0.0f;
 	bool			initialized = false;
+
+	// the light crystal on the left hand (replaces the HUD lightgem in VR)
+	renderEntity_t	crystalEntity;
+	qhandle_t		crystalHandle = -1;
+	float			crystalLevel = 0.0f;
 
 	struct clipRestore_t {
 		idEntityPtr<idEntity> ent;

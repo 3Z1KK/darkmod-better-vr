@@ -7219,7 +7219,8 @@ void idPlayer::UpdateHUD()
 	m_overlays.setGlobalStateFloat("barSize", cv_gui_barSize.GetFloat());
 	m_overlays.setGlobalStateFloat("objectiveTextSize", cv_gui_objectiveTextSize.GetFloat());
 	// Propagate the CVAR to the HUD
-	hud->SetStateBool("HUD_LightgemVisible", !cv_tdm_hud_hide_lightgem.GetBool());
+	// VR: the light crystal is on the player's hand instead
+	hud->SetStateBool("HUD_LightgemVisible", !cv_tdm_hud_hide_lightgem.GetBool() && !vrHands.IsActive());
 
 	// Update the inventory HUD
 	UpdateInventoryHUD();
