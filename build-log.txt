@@ -1,0 +1,124 @@
+svn = C:\Program Files\TortoiseSVN\bin\svn.exe
+===== svn export artefacts =====
+
+    Directory: D:\a\darkmod-better-vr\darkmod-better-vr\ThirdParty\artefacts
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          10/14/2026  8:29 AM                linux_32
+d----          10/14/2026  8:29 AM                linux_64
+d----          10/14/2026  8:29 AM                tdm_deploy
+d----          10/14/2026  8:29 AM                windows_32
+d----          10/14/2026  8:29 AM                windows_64
+
+
+===== msbuild Release x64 =====
+MSBuild version 17.14.60+43b635718 for .NET Framework
+
+FullName                                                                                                      Length
+--------                                                                                                      ------
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs                                                  
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\TheDarkModx64.exe                                        20575744
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages                                           
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\ambientEnvironment.fs                            9984
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\ambientEnvironment.vs                            5524
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\bloom_apply.frag.glsl                            984
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\bloom_downsample.frag.glsl                       1904
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\bloom_upsample.frag.glsl                         1862
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\doublevision.fs                                  1315
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\doublevision.vs                                  795
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\fresnel.fs                                       1524
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\fresnel.vs                                       2635
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\fullscreen_tri.vert.glsl                         874
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\gaussian_blur.frag.glsl                          1560
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\heatHaze_v2.fs                                   1409
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\heatHaze_v2.vs                                   56
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\heatHaze_v2.vs.glsl                              1234
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\heatHaze.fs                                      1276
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\heatHaze.vs                                      56
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\heatHazeCommon.glsl                              4816
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\heatHazeWithAlphaDepth.fs                        9803
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\heatHazeWithAlphaDepth.vs                        4109
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\heatHazeWithDepth.fs                             1322
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\heatHazeWithDepth.vs                             56
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\heatHazeWithMask.fs                              1321
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\heatHazeWithMask.vs                              56
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\heatHazeWithMaskAndBlur.fs                       1321
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\heatHazeWithMaskAndBlur.vs                       56
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\HeatHazeWithMaskAndDepth.fs                      1368
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\HeatHazeWithMaskAndDepth.vs                      56
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\parallaxCubeReflect.fs                           3210
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\parallaxCubeReflect.vs                           2168
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\renderTools.fs                                   855
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\renderTools.vs                                   961
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\rotoedge.fs                                      11905
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\rotoedge.vs                                      1215
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\ssao_blur.frag.glsl                              3741
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\ssao_depth.frag.glsl                             340
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\ssao_depthmip.frag.glsl                          1939
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\ssao_show.frag.glsl                              276
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\ssao.frag.glsl                                   8585
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\ssao.vert.glsl                                   549
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\tdm_compression.glsl                             1313
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\tdm_constants_shared.glsl                        1456
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\tdm_dither.glsl                                  1128
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\tdm_interaction.glsl                             7970
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\tdm_lightproject.glsl                            2393
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\tdm_parallax.glsl                                4192
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\tdm_poissondisk.glsl                             767
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\tdm_querylod.glsl                                1559
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\tdm_shadowmaps.glsl                              8477
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\tdm_shadowstencilsoft_shared.glsl                907
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\tdm_shadowstencilsoft.glsl                       6305
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\tdm_transform.glsl                               1062
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\tdm_utils.glsl                                   3678
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\testImageCube.fs                                 826
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\testImageCube.vs                                 951
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\tiled_custom_mipmap.frag.glsl                    5026
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\volumetric_blur.fs                               2373
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\volumetric_common.glsl                           1547
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\volumetric_compositing.fs                        4168
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\volumetric_raymarching.fs                        4978
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\volumetric.vs                                    865
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\depth                                     
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\frob                                      
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\interaction                               
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\light_passes                              
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\shadow_map                                
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\stencil                                   
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\surface_passes                            
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\tonemap                                   
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\depth\depth.frag.glsl                     1085
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\depth\depth.vert.glsl                     1217
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\frob\frob_apply.frag.glsl                 903
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\frob\frob_extrude.geom.glsl               2250
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\frob\frob_flat.frag.glsl                  999
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\frob\frob_highlight.frag.glsl             1069
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\frob\frob_modalpha.frag.glsl              830
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\frob\frob.vert.glsl                       1125
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\interaction\interaction.ambient.fs.glsl   4706
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\interaction\interaction.ambient.vs.glsl   2739
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\interaction\interaction.common.fs.glsl    5071
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\interaction\interaction.common.vs.glsl    2958
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\interaction\interaction.shadowmap.fs.glsl 1904
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\interaction\interaction.shadowmap.vs.glsl 805
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\interaction\interaction.stencil.fs.glsl   1769
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\interaction\interaction.stencil.vs.glsl   805
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\light_passes\blend_light.frag.glsl        1121
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\light_passes\blend_light.vert.glsl        1106
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\light_passes\fog_light.frag.glsl          2385
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\light_passes\fog_light.vert.glsl          1226
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\shadow_map\shadow_map.frag.glsl           903
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\shadow_map\shadow_map.vert.glsl           2319
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\stencil\stencil_shadow.vert.glsl          1131
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\surface_passes\environment.frag.glsl      1830
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\surface_passes\environment.vert.glsl      1547
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\surface_passes\simple_texture.frag.glsl   1277
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\surface_passes\simple_texture.vert.glsl   1557
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\surface_passes\soft_particle.frag.glsl    2309
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\surface_passes\soft_particle.vert.glsl    1148
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\surface_passes\texgen_shared.glsl         820
+D:\a\darkmod-better-vr\darkmod-better-vr\ci-out\dist\glprogs\stages\tonemap\tonemap.frag.glsl                 7584
+
+
+RESULT: SUCCESS
