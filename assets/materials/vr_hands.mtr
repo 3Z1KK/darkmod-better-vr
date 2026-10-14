@@ -42,3 +42,56 @@ vr/light_crystal
 		blue	Parm2
 	}
 }
+
+// VR light crystal ring band (dark gold)
+vr/light_ring_band
+{
+	noShadows
+	noSelfShadow
+	{
+		blend	diffusemap
+		map		_white
+		red		0.35
+		green	0.25
+		blue	0.10
+	}
+	{
+		blend	specularmap
+		map		_white
+		red		0.8
+		green	0.65
+		blue	0.35
+	}
+}
+
+// VR glove hands ("Glove" by Normal Map Enjoyer, CC-BY-4.0, see models/vr/hands/CREDITS.txt)
+vr/hands/glove
+{
+	noShadows
+	noSelfShadow
+	diffusemap	textures/vr/hands/glove_d
+	bumpmap		textures/vr/hands/glove_local
+	specularmap	textures/vr/hands/glove_s
+	// faint self illumination (shaderParm0-2) so the hands never vanish completely in the dark
+	{
+		blend	add
+		map		textures/vr/hands/glove_d
+		red		Parm0
+		green	Parm1
+		blue	Parm2
+	}
+}
+
+// the closed cuff opening of the gloves
+vr/hands/glove_inner
+{
+	noShadows
+	noSelfShadow
+	{
+		blend	diffusemap
+		map		_white
+		red		0.06
+		green	0.04
+		blue	0.03
+	}
+}

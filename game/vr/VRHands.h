@@ -14,6 +14,8 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 ******************************************************************************/
 #pragma once
 
+#include "VRHandModel.h"
+
 /*
  * VR hands: the player's only way to touch the world.
  *
@@ -74,7 +76,8 @@ public:
 	void			Update( idPlayer *player, const vrHandInput_t &input, float dt );
 	void			Release( idPlayer *player, bool allowInventory );
 	// after all entities moved: place the drawn hand
-	void			UpdateVisual();
+	void			UpdateVisual( float dt );
+	const idVRHandModel &GetGlove() const { return glove; }
 
 	idEntity *		GetTouched() const { return touched.GetEntity(); }
 	idEntity *		GetHeld() const { return held.GetEntity(); }
@@ -126,6 +129,10 @@ private:
 	idMat3			carryHomeAxis;
 	int				slipTime = 0;
 
+	void			UpdateFingers( float dt );
+
+	idVRHandModel	glove;
+	bool			gloveTried = false;
 	idRenderModel *	model = nullptr;
 	renderEntity_t	renderEntity;
 	qhandle_t		renderHandle = -1;
@@ -162,9 +169,11 @@ private:
 	float			lastDt = 0.0f;
 	bool			initialized = false;
 
-	// the light crystal on the left hand (replaces the HUD lightgem in VR)
+	// the light crystal ring on the left hand (replaces the HUD lightgem in VR)
 	renderEntity_t	crystalEntity;
 	qhandle_t		crystalHandle = -1;
+	renderEntity_t	ringEntity;
+	qhandle_t		ringHandle = -1;
 	float			crystalLevel = 0.0f;
 
 	struct clipRestore_t {

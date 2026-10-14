@@ -45,6 +45,8 @@ idCVar vr_gripReleaseThreshold( "vr_gripReleaseThreshold", "0.35", CVAR_GAME | C
 idCVar vr_stomachDrop( "vr_stomachDrop", "20", CVAR_GAME | CVAR_FLOAT, "VR: stomach inventory zone, distance (units) below the head" );
 idCVar vr_stomachForward( "vr_stomachForward", "4", CVAR_GAME | CVAR_FLOAT, "VR: stomach inventory zone, distance (units) in front of the head" );
 idCVar vr_stomachRadius( "vr_stomachRadius", "9", CVAR_GAME | CVAR_FLOAT, "VR: stomach inventory zone radius (units)" );
+idCVar vr_ringRadius( "vr_ringRadius", "0.8", CVAR_GAME | CVAR_FLOAT, "VR: radius of the light crystal ring on the left ring finger (game units)" );
+idCVar vr_ringOffset( "vr_ringOffset", "-0.1", CVAR_GAME | CVAR_FLOAT, "VR: ring centre offset from the finger joint towards the back of the finger (game units)" );
 idCVar vr_handsDebug( "vr_handsDebug", "0", CVAR_GAME | CVAR_BOOL, "VR: print hand interaction events" );
 
 namespace {
@@ -150,7 +152,7 @@ namespace {
 		if ( crystalModel != nullptr ) {
 			return crystalModel;
 		}
-		const float s = 0.55f;
+		const float s = 0.30f;
 		const idVec3 pts[6] = { idVec3( s, 0, 0 ), idVec3( -s, 0, 0 ), idVec3( 0, s * 0.8f, 0 ), idVec3( 0, -s * 0.8f, 0 ), idVec3( 0, 0, s * 1.4f ), idVec3( 0, 0, -s * 0.6f ) };
 		const int faces[8][3] = { {0,2,4}, {2,1,4}, {1,3,4}, {3,0,4}, {2,0,5}, {1,2,5}, {3,1,5}, {0,3,5} };
 		idRenderModel *model = renderModelManager->AllocModel();
@@ -189,6 +191,61 @@ namespace {
 		tri->generateNormals = false;
 		model->AddSurface( surf );
 		crystalModel = model;
+		return model;
+	}
+
+	// ring band around the finger: a torus around the x axis
+	idRenderModel *ringModel = nullptr;
+	float ringModelRadius = -1.0f;
+	idRenderModel *GetRingModel( float radius ) {
+		if ( ringModel != nullptr && ringModelRadius == radius ) {
+			return ringModel;
+		}
+		const int major = 24, minor = 8;
+		const float tube = 0.08f;
+		idRenderModel *model = renderModelManager->AllocModel();
+		model->InitEmpty( va( "_vr_light_ring_%.2f", radius ) );
+		modelSurface_t surf;
+		surf.id = 0;
+		surf.material = declManager->FindMaterial( "vr/light_ring_band" );
+		surf.geometry = model->AllocSurfaceTriangles( ( major + 1 ) * ( minor + 1 ), major * minor * 6 );
+		srfTriangles_t *tri = surf.geometry;
+		tri->numVerts = 0;
+		tri->numIndexes = 0;
+		tri->bounds.Clear();
+		for ( int i = 0; i <= major; i++ ) {
+			const float a = idMath::TWO_PI * i / major;
+			const idVec3 dir( 0.0f, idMath::Cos( a ), idMath::Sin( a ) );
+			const idVec3 tangent( 0.0f, -idMath::Sin( a ), idMath::Cos( a ) );
+			for ( int j = 0; j <= minor; j++ ) {
+				const float b = idMath::TWO_PI * j / minor;
+				const idVec3 n = dir * idMath::Cos( b ) + idVec3( idMath::Sin( b ), 0.0f, 0.0f );
+				idDrawVert &dv = tri->verts[tri->numVerts++];
+				dv.Clear();
+				dv.xyz = dir * radius + n * tube;
+				dv.st.Set( float( i ) / major, float( j ) / minor );
+				dv.normal = n;
+				dv.tangents[0] = tangent;
+				dv.tangents[1] = n.Cross( tangent );
+				dv.color[0] = dv.color[1] = dv.color[2] = dv.color[3] = 255;
+				tri->bounds.AddPoint( dv.xyz );
+			}
+		}
+		for ( int i = 0; i < major; i++ ) {
+			for ( int j = 0; j < minor; j++ ) {
+				const int v0 = i * ( minor + 1 ) + j, v1 = v0 + minor + 1;
+				glIndex_t *idx = tri->indexes + tri->numIndexes;
+				idx[0] = v0; idx[1] = v0 + 1; idx[2] = v1;
+				idx[3] = v1; idx[4] = v0 + 1; idx[5] = v1 + 1;
+				tri->numIndexes += 6;
+			}
+		}
+		tri->tangentsCalculated = true;
+		tri->facePlanesCalculated = false;
+		tri->generateNormals = false;
+		model->AddSurface( surf );
+		ringModel = model;
+		ringModelRadius = radius;
 		return model;
 	}
 
@@ -261,6 +318,8 @@ void idVRHand::Shutdown() {
 		gameRenderWorld->FreeEntityDef( renderHandle );
 	}
 	renderHandle = -1;
+	glove.Free();
+	gloveTried = false;
 	held = nullptr;
 	touched = nullptr;
 	interaction = IK_NONE;
@@ -590,14 +649,18 @@ void idVRHand::UpdateRenderEntity() {
 		}
 		return;
 	}
-	if ( model == nullptr ) {
-		model = GetHandModel( index );
-	}
 	memset( &renderEntity, 0, sizeof( renderEntity ) );
-	renderEntity.hModel = model;
-	renderEntity.origin = visualPos;
-	renderEntity.axis = visualAxis;
-	renderEntity.bounds = model->Bounds();
+	if ( glove.IsValid() ) {
+		glove.FillRenderEntity( renderEntity );
+	} else {
+		if ( model == nullptr ) {
+			model = GetHandModel( index );
+		}
+		renderEntity.hModel = model;
+		renderEntity.origin = visualPos;
+		renderEntity.axis = visualAxis;
+		renderEntity.bounds = model->Bounds();
+	}
 	renderEntity.noShadow = true;
 	renderEntity.suppressSurfaceInViewID = VID_LIGHTGEM;
 	// faint self illumination so the placeholder hands stay visible in the dark
@@ -612,7 +675,38 @@ void idVRHand::UpdateRenderEntity() {
 	}
 }
 
-void idVRHand::UpdateVisual() {
+/*
+ * Fingers: an empty hand follows the controller buttons (grip curls the lower three fingers around the handle,
+ * the trigger curls the index finger). A hand holding something curls each finger until it touches the object.
+ */
+void idVRHand::UpdateFingers( float dt ) {
+	if ( !glove.IsValid() ) {
+		return;
+	}
+	float targets[idVRHandModel::NUM_FINGERS];
+	idEntity *ent = held.GetEntity();
+	if ( ( interaction == IK_HOLD || interaction == IK_CARRY ) && ent != nullptr ) {
+		glove.FindContactCurls( ent->GetPhysics()->GetClipModel( interaction == IK_HOLD ? heldBodyId : 0 ), 85.0f, targets );
+	} else if ( interaction == IK_FROB ) {
+		for ( int f = 0; f < idVRHandModel::NUM_FINGERS; f++ ) {
+			targets[f] = 35.0f + input.grip * 30.0f;
+		}
+	} else {
+		const float relaxed = 10.0f;
+		targets[idVRHandModel::THUMB] = relaxed + input.grip * 25.0f;
+		targets[idVRHandModel::INDEX] = relaxed + input.trigger * 65.0f;
+		targets[idVRHandModel::MIDDLE] = relaxed + input.grip * 55.0f;
+		targets[idVRHandModel::RING] = relaxed + input.grip * 58.0f;
+		targets[idVRHandModel::PINKY] = relaxed + input.grip * 62.0f;
+	}
+	glove.MoveFingers( targets, dt );
+}
+
+void idVRHand::UpdateVisual( float dt ) {
+	if ( !gloveTried ) {
+		gloveTried = true;
+		glove.Init( index );
+	}
 	if ( tracked ) {
 		switch ( interaction ) {
 		case IK_HOLD:
@@ -627,6 +721,10 @@ void idVRHand::UpdateVisual() {
 			visualPos = physValid ? physPos : input.pos;
 			visualAxis = input.axis;
 			break;
+		}
+		if ( glove.IsValid() ) {
+			glove.SetPose( visualPos, visualAxis );
+			UpdateFingers( dt );
 		}
 	}
 	UpdateRenderEntity();
@@ -751,6 +849,10 @@ void idVRHands::Shutdown() {
 		gameRenderWorld->FreeEntityDef( crystalHandle );
 	}
 	crystalHandle = -1;
+	if ( ringHandle != -1 && gameRenderWorld ) {
+		gameRenderWorld->FreeEntityDef( ringHandle );
+	}
+	ringHandle = -1;
 	hands[0].Shutdown();
 	hands[1].Shutdown();
 	for ( int i = 0; i < highlighted.Num(); i++ ) {
@@ -1056,36 +1158,79 @@ void idVRHands::PostThink( idPlayer *player ) {
 	if ( !initialized ) {
 		return;
 	}
-	hands[0].UpdateVisual();
-	hands[1].UpdateVisual();
+	hands[0].UpdateVisual( lastDt );
+	hands[1].UpdateVisual( lastDt );
 	UpdateLightCrystal( player );
 }
 
 /*
- * The light crystal on the back of the left hand glows as brightly as the player is lit (the lightgem).
- * Placeholder until the hands have fingers and it becomes a ring.
+ * The light crystal sits in a ring on the left ring finger and glows as brightly as the player is lit
+ * (the lightgem). Without the glove model it sits on the back of the placeholder hand.
  */
 void idVRHands::UpdateLightCrystal( idPlayer *player ) {
 	const idVRHand &hand = hands[0];
 	if ( !gameRenderWorld ) {
 		return;
 	}
-	if ( !hand.IsTracked() || !IsActive() ) {
+	auto freeEntities = [&]() {
 		if ( crystalHandle != -1 ) {
 			gameRenderWorld->FreeEntityDef( crystalHandle );
 			crystalHandle = -1;
 		}
+		if ( ringHandle != -1 ) {
+			gameRenderWorld->FreeEntityDef( ringHandle );
+			ringHandle = -1;
+		}
+	};
+	if ( !hand.IsTracked() || !IsActive() ) {
+		freeEntities();
 		return;
 	}
 	const float target = idMath::ClampFloat( 0.0f, 1.0f, player->GetCurrentLightgemValue() / float( DARKMOD_LG_MAX ) );
 	crystalLevel += ( target - crystalLevel ) * idMath::ClampFloat( 0.0f, 1.0f, lastDt * 8.0f );
 	const float glow = 0.02f + 0.98f * crystalLevel * crystalLevel;
 
+	// where: the ring socket joint (x along the finger, z out of the back of the finger)
+	idVec3 socketPos;
+	idMat3 socketAxis;
+	const bool onFinger = hand.GetGlove().GetJointWorld( hand.GetGlove().GetRingSocket(), socketPos, socketAxis );
+	const float ringRadius = vr_ringRadius.GetFloat();
+	idVec3 crystalPos;
+	idMat3 crystalAxis;
+	if ( onFinger ) {
+		const idVec3 ringCenter = socketPos + socketAxis[2] * vr_ringOffset.GetFloat();
+		crystalPos = ringCenter + socketAxis[2] * ( ringRadius + 0.12f );
+		crystalAxis = socketAxis;
+
+		idRenderModel *ring = GetRingModel( ringRadius );
+		memset( &ringEntity, 0, sizeof( ringEntity ) );
+		ringEntity.hModel = ring;
+		ringEntity.origin = ringCenter;
+		ringEntity.axis = socketAxis;
+		ringEntity.bounds = ring->Bounds();
+		ringEntity.noShadow = true;
+		ringEntity.suppressSurfaceInViewID = VID_LIGHTGEM;
+		ringEntity.shaderParms[SHADERPARM_RED] = ringEntity.shaderParms[SHADERPARM_GREEN] = ringEntity.shaderParms[SHADERPARM_BLUE] = 1.0f;
+		ringEntity.shaderParms[SHADERPARM_ALPHA] = 1.0f;
+		if ( ringHandle == -1 ) {
+			ringHandle = gameRenderWorld->AddEntityDef( &ringEntity );
+		} else {
+			gameRenderWorld->UpdateEntityDef( ringHandle, &ringEntity );
+		}
+	} else {
+		if ( ringHandle != -1 ) {
+			gameRenderWorld->FreeEntityDef( ringHandle );
+			ringHandle = -1;
+		}
+		crystalPos = hand.GetVisualPos() + idVec3( -3.0f, 0.0f, 1.8f ) * hand.GetVisualAxis();
+		crystalAxis = hand.GetVisualAxis();
+	}
+
 	idRenderModel *model = GetCrystalModel();
 	memset( &crystalEntity, 0, sizeof( crystalEntity ) );
 	crystalEntity.hModel = model;
-	crystalEntity.origin = hand.GetVisualPos() + idVec3( -3.0f, 0.0f, 1.8f ) * hand.GetVisualAxis();
-	crystalEntity.axis = hand.GetVisualAxis();
+	crystalEntity.origin = crystalPos;
+	crystalEntity.axis = crystalAxis;
 	crystalEntity.bounds = model->Bounds();
 	crystalEntity.noShadow = true;
 	crystalEntity.suppressSurfaceInViewID = VID_LIGHTGEM;
@@ -1099,3 +1244,4 @@ void idVRHands::UpdateLightCrystal( idPlayer *player ) {
 		gameRenderWorld->UpdateEntityDef( crystalHandle, &crystalEntity );
 	}
 }
+
