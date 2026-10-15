@@ -42,6 +42,54 @@ namespace {
 void idVRReadables::Reset() {
 	open.Clear();
 	closing.Clear();
+	for ( int i = 0; i < MAX_HAND_GUIS; i++ ) {
+		handGuis[i] = nullptr;
+	}
+	pendingOpen = false;
+	pendingSince = 0;
+}
+
+bool idVRReadables::IsGuiInHand( const idUserInterface *gui ) const {
+	if ( gui == nullptr ) {
+		return false;
+	}
+	if ( pendingOpen ) {
+		return true;
+	}
+	for ( int i = 0; i < MAX_HAND_GUIS; i++ ) {
+		if ( handGuis[i] == gui ) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void idVRReadables::RefreshHandGuis( idPlayer *player ) {
+	int n = 0;
+	bool pending = false;
+	for ( int i = 0; i < open.Num() && n < MAX_HAND_GUIS; i++ ) {
+		const int overlay = GetOverlayHandle( open[i].ent.GetEntity() );
+		idUserInterface *gui = overlay != -1 ? player->GetOverlay( overlay ) : nullptr;
+		if ( gui != nullptr ) {
+			handGuis[n++] = gui;
+		} else {
+			pending = true;
+		}
+	}
+	// (give the script a moment to create the page; a readable that never opens doesn't block GUIs for long)
+	if ( pending && !pendingOpen ) {
+		pendingSince = gameLocal.time;
+	}
+	pendingOpen = pending && gameLocal.time < pendingSince + 2000;
+	for ( int i = 0; i < closing.Num() && n < MAX_HAND_GUIS; i++ ) {
+		idUserInterface *gui = player->GetOverlay( closing[i].overlay );
+		if ( gui != nullptr ) {
+			handGuis[n++] = gui;
+		}
+	}
+	for ( ; n < MAX_HAND_GUIS; n++ ) {
+		handGuis[n] = nullptr;
+	}
 }
 
 void idVRReadables::Free() {
@@ -119,6 +167,10 @@ void idVRReadables::Open( idPlayer *player, idEntity *ent, int hand, bool mobile
 		}
 	}
 	open.Append( o );
+	if ( o.overlay == -1 ) {
+		pendingOpen = true;			// the page is about to appear
+		pendingSince = gameLocal.time;
+	}
 	gameLocal.Printf( "VR readables: %s opened in hand %d\n", ent->name.c_str(), hand );
 }
 
@@ -248,6 +300,8 @@ void idVRReadables::Update( idPlayer *player, idVRHand hands[2] ) {
 			gui->SetStateInt( STATE_CLOSE_REQUEST, 1 );
 		}
 	}
+
+	RefreshHandGuis( player );
 }
 
 void idVRReadables::UpdatePanels( idPlayer *player, idVRHand hands[2] ) {

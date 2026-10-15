@@ -4179,10 +4179,12 @@ idPlayer::ActiveGui
 */
 idUserInterface *idPlayer::ActiveGui( void )
 {
-	if ( m_overlays.findInteractive() )
-		return m_overlays.findInteractive();
-
-	return NULL; // greebo: No focusUI anymore
+	idUserInterface *gui = m_overlays.findInteractive();
+	// VR: a readable's page held in a hand is not a screen GUI. Otherwise the controllers would switch to the
+	// VR menu pointer mode (no hands, no grip) and the view angles would be turned into GUI mouse moves.
+	if ( gui != NULL && vrHands.IsGuiInHand( gui ) )
+		return NULL;
+	return gui; // greebo: No focusUI anymore
 	//return focusUI;
 }
 

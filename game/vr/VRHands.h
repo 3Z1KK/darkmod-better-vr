@@ -197,6 +197,7 @@ public:
 	idVRArrowSelector &GetArrowSelector() { return arrowSelector; }
 	// a readable's page shown at a hand (not drawn on the screen)
 	bool			IsOverlayInHand( int overlayHandle ) const { return readables.IsOverlayInHand( overlayHandle ); }
+	bool			IsGuiInHand( const idUserInterface *gui ) const { return initialized && readables.IsGuiInHand( gui ); }
 	// the bow: a hand holding the bow or the string lets go / a hand grabs a bow placed in the map
 	void			BowRelease( idPlayer *player, int handIndex ) { bow.OnRelease( player, hands, handIndex ); }
 	bool			BowTakeWorld( idPlayer *player, int handIndex, idEntity *ent ) { return bow.TakeWorldBow( player, hands, handIndex, ent ); }

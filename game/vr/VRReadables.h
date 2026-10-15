@@ -44,6 +44,9 @@ public:
 
 	// this overlay is shown at a hand (or closing), not on the screen
 	bool			IsOverlayInHand( int overlayHandle ) const;
+	// this GUI is a page at a hand (or closing): it is not the player's active GUI, so the controllers stay in
+	// hand mode instead of the VR menu pointer mode (safe to call from the input thread)
+	bool			IsGuiInHand( const idUserInterface *gui ) const;
 
 	// a readable (scripted like the normal game's readables)? mobile = one that can be carried
 	static bool		IsReadable( idEntity *ent, bool *mobile = nullptr );
@@ -71,6 +74,15 @@ private:
 	void			FreePanel( open_t &o );
 	void			TurnPage( idPlayer *player, open_t &o );
 
+	void			RefreshHandGuis( idPlayer *player );
+
 	idList<open_t>	open;
 	idList<closing_t> closing;
+
+	// the GUIs of open and closing readables, kept in a plain array for IsGuiInHand
+	enum { MAX_HAND_GUIS = 8 };
+	const idUserInterface * volatile handGuis[MAX_HAND_GUIS] = {};
+	// a grabbed readable whose page the script hasn't created yet: the next interactive GUI is that page
+	volatile bool	pendingOpen = false;
+	int				pendingSince = 0;
 };
