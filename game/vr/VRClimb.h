@@ -26,8 +26,9 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
  *               mantleable and the surface under the fingers is flat enough (the game's own pm_mantle_minflatness).
  *               Cracks and lips in walls count too. Only if the mission allows it (worldspawn "vr_hand_climbing" 1;
  *               vr_climbLedges overrides that for testing). Each hand has vr_climbGraceTime seconds (1.5) of
- *               holding the body up; after that gravity pulls as usual and the body sinks unless it is pulled up,
- *               until the hand slips off (vr_climbSlipDistance). Standing on solid ground refills both hands.
+ *               holding the body up; after that gravity slowly pulls the body down (vr_climbSinkSpeed) and the
+ *               player has to pull harder to make up for it. The grip only fails when the real hand ends up too
+ *               far from where it holds on (vr_climbSlipDistance). Standing on solid ground refills both hands.
  *               Pulling up toward a held ledge starts the game's own mantle (as if jump was pressed) as soon
  *               as the ledge is in its reach.
  *   ladders     ladder surfaces (material) and vines: hands only in VR (walking or jumping into them doesn't

@@ -24,7 +24,8 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 
 idCVar vr_climbLedges( "vr_climbLedges", "-1", CVAR_GAME | CVAR_INTEGER, "VR: climbing ledges by hand. -1 = the mission decides (worldspawn \"vr_hand_climbing\" \"1\", off if not set), 0 = off, 1 = on. Ropes and ladders are always climbed by hand in VR" );
 idCVar vr_climbGraceTime( "vr_climbGraceTime", "1.5", CVAR_GAME | CVAR_FLOAT, "VR: seconds each hand can hold the body up on a ledge before gravity pulls as usual (refilled when standing on solid ground). Not for ropes and ladders" );
-idCVar vr_climbSlipDistance( "vr_climbSlipDistance", "10", CVAR_GAME | CVAR_FLOAT, "VR: a climbing hand slips off when the real hand is this far (units) from where it holds on" );
+idCVar vr_climbSlipDistance( "vr_climbSlipDistance", "16", CVAR_GAME | CVAR_FLOAT, "VR: a climbing hand slips off when the real hand is this far (units) from where it holds on" );
+idCVar vr_climbSinkSpeed( "vr_climbSinkSpeed", "20", CVAR_GAME | CVAR_FLOAT, "VR: how fast (units/s) gravity pulls the body down on a ledge once the hands' grace time is over (ropes, ladders: never)" );
 idCVar vr_climbMaxSpeed( "vr_climbMaxSpeed", "250", CVAR_GAME | CVAR_FLOAT, "VR: fastest the hands can move the body while climbing (units/s)" );
 idCVar vr_climbReach( "vr_climbReach", "6", CVAR_GAME | CVAR_FLOAT, "VR: how far (units) from the hand a climbable surface may be to hold on" );
 idCVar vr_climbLipHeight( "vr_climbLipHeight", "4", CVAR_GAME | CVAR_FLOAT, "VR: how far above the hand (units) the fingers look for a ledge top or the bottom of a crack" );
@@ -103,7 +104,7 @@ bool idVRClimb::FindRope( idPlayer *player, const idVRHand &hand, gripState_t &o
 	idBounds bounds( handPos );
 	bounds.ExpandSelf( vr_climbReach.GetFloat() );
 	idClip_ClipModelList clipModels;
-	gameLocal.clip.ClipModelsTouchingBounds( bounds, CONTENTS_SOLID | CONTENTS_CORPSE | CONTENTS_BODY, clipModels );
+	gameLocal.clip.ClipModelsTouchingBounds( bounds, CONTENTS_SOLID | CONTENTS_CORPSE | CONTENTS_BODY | CONTENTS_RENDERMODEL, clipModels );
 	float best = idMath::INFINITY;
 	bool found = false;
 	for ( int i = 0; i < clipModels.Num(); i++ ) {
@@ -163,6 +164,36 @@ bool idVRClimb::FindGrip( idPlayer *player, const idVRHand &hand, idEntity *touc
 	dirs[numDirs++] = axis[0];
 	dirs[numDirs++] = -axis[0];
 	dirs[numDirs++] = -up;
+
+	// a ladder: ladder surfaces are often on invisible player clip brushes in front of the visible ladder, so
+	// look with everything that stops the player (also from the eyes to the hand: the hand may be inside such
+	// a brush already)
+	{
+		const int ladderMask = MASK_SOLID | phys->GetClipMask();
+		trace_t tr;
+		for ( int i = 0; i < numDirs; i++ ) {
+			gameLocal.clip.TracePoint( tr, from, from + dirs[i] * reach, ladderMask, player );
+			if ( tr.fraction < 1.0f && tr.c.material != nullptr && tr.c.material->IsLadder() ) {
+				out.ent = gameLocal.entities[tr.c.entityNum];
+				out.kind = KIND_LADDER;
+				point = tr.c.point;
+				return out.ent.GetEntity() != nullptr;
+			}
+		}
+		const idVec3 eye = player->GetEyePosition();
+		idVec3 toHand = from - eye;
+		const float handDist = toHand.Normalize();
+		if ( handDist > 1.0f ) {
+			gameLocal.clip.TracePoint( tr, eye, from + toHand * reach, ladderMask, player );
+			if ( tr.fraction < 1.0f && tr.c.material != nullptr && tr.c.material->IsLadder()
+				&& ( tr.c.point - from ).LengthSqr() < Square( reach * 2.0f ) ) {
+				out.ent = gameLocal.entities[tr.c.entityNum];
+				out.kind = KIND_LADDER;
+				point = tr.c.point;
+				return out.ent.GetEntity() != nullptr;
+			}
+		}
+	}
 
 	trace_t hit;
 	hit.fraction = 1.0f;
@@ -401,18 +432,17 @@ void idVRClimb::Update( idPlayer *player, idVRHand hands[2], float dt ) {
 		}
 	}
 
-	// the body's move: the hands' pull, plus gravity once no hand holds it up
+	// the body's move: the hands' pull. Once no hand holds it up (a ledge held longer than the grace time),
+	// gravity pulls it down slowly (it starts like gravity and stays at vr_climbSinkSpeed); pulling harder
+	// makes up for it. The grip only fails when the real hand gets too far from it (below).
 	idVec3 move = pull - up * pullUp;
 	float dz;
 	if ( supported ) {
 		vz = 0.0f;
 		dz = pullUp;
 	} else {
-		vz -= phys->GetGravity().Length() * dt;
-		if ( pullUp / dt > vz ) {
-			vz = pullUp / dt;		// pulling up beats the fall
-		}
-		dz = vz * dt;
+		vz = Max( vz - phys->GetGravity().Length() * dt, -vr_climbSinkSpeed.GetFloat() );
+		dz = pullUp + vz * dt;
 	}
 	move += up * dz + carry;
 	const float maxMove = vr_climbMaxSpeed.GetFloat() * dt;
