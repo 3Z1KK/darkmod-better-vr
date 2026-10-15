@@ -2290,9 +2290,19 @@ idPhysics_Player::CheckClimbable
 DarkMod: Checks ropes, ladders and other climbables
 ================
 */
-void idPhysics_Player::CheckClimbable( void ) 
+void idPhysics_Player::CheckClimbable( void )
 {
-	if( current.movementTime ) 
+	// VR: ropes and ladders are climbed with the hands (game/vr/VRClimb.cpp)
+	if ( m_vrHandsOnlyClimb )
+	{
+		if ( m_bOnRope )
+			RopeDetach();
+		if ( m_bOnClimb )
+			ClimbDetach();
+		return;
+	}
+
+	if( current.movementTime )
 		return;
 
 	// if on the ground moving backwards
@@ -2854,9 +2864,14 @@ void idPhysics_Player::MovePlayer( int msec ) {
 	// Mantle MOD
 	// SophisticatedZombie (DH)
 	// greebo: Do the MantleMove before checking the rope contacts
-	else if ( !(m_mantlePhase == notMantling_DarkModMantlePhase || m_mantlePhase == fixClipping_DarkModMantlePhase) ) 
+	else if ( !(m_mantlePhase == notMantling_DarkModMantlePhase || m_mantlePhase == fixClipping_DarkModMantlePhase) )
 	{
 		MantleMove();
+	}
+	else if ( m_vrClimbing )
+	{
+		// VR: hanging on by the hands. The hands move the body (VRClimbMove), nothing else does.
+		current.velocity.Zero();
 	}
 	else if ( m_bRopeContact ) 
 	{
@@ -3047,7 +3062,9 @@ idPhysics_Player::idPhysics_Player
 ================
 */
 idPhysics_Player::idPhysics_Player( void ) 
-	: m_eShoulderAnimState(eShoulderingAnimation_NotStarted)
+	: m_vrClimbing(false)
+	, m_vrHandsOnlyClimb(false)
+	, m_eShoulderAnimState(eShoulderingAnimation_NotStarted)
 	, m_fShoulderingTime(0.0f)
     , m_bShouldering_SkipDucking(false)
 	, m_fShouldering_TimeToNextSound(0.0f)
@@ -5078,9 +5095,18 @@ idPhysics_Player::EMantleable idPhysics_Player::ComputeMantlePathForTarget
 
 void idPhysics_Player::PerformMantle()
 {
+	// Forward vector is direction player is looking
+	auto finalMoveAngles = vr_useMotionControllers.GetBool() ? (command.movementAxis * actualViewAngles.ToQuat()).ToAngles() : viewAngles;
+	idVec3 forward = finalMoveAngles.ToForward();
+	forward.Normalize();
+	PerformMantleToward( forward, false );
+}
+
+void idPhysics_Player::PerformMantleToward( const idVec3 &forwardIn, bool ignoreJumpRelease )
+{
 	// Can't start mantle if already mantling or not yet possible (jump button not yet released)
 	if ( !(m_mantlePhase == notMantling_DarkModMantlePhase || m_mantlePhase == fixClipping_DarkModMantlePhase)
-			|| !m_mantleStartPossible )
+			|| ( !m_mantleStartPossible && !ignoreJumpRelease ) )
 	{
 		return;
 	}
@@ -5114,10 +5140,7 @@ void idPhysics_Player::PerformMantle()
 	m_p_mantledEntity = NULL;
 	m_mantledEntityID = 0;
 
-	// Forward vector is direction player is looking
-	auto finalMoveAngles = vr_useMotionControllers.GetBool() ? (command.movementAxis * actualViewAngles.ToQuat()).ToAngles() : viewAngles;
-	idVec3 forward = finalMoveAngles.ToForward();
-	forward.Normalize();
+	const idVec3 forward = forwardIn;
 
 	// We use gravity alot here...
 	const idVec3& gravityNormal = GetGravityNormal();
@@ -6361,6 +6384,75 @@ void idPhysics_Player::ShoulderingMove()
 	m_fShoulderingTime -= framemsec;
 	if (m_fShoulderingTime < 0.0f)
 		m_fShoulderingTime = 0.0f;
+}
+
+/*
+================
+idPhysics_Player::SetVRClimbing / VRClimbMove / VRTryMantle
+
+VR hand climbing (game/vr/VRClimb.cpp). While climbing, MovePlayer leaves the body alone and the hands move it
+with VRClimbMove: a plain collision move (slides along what it hits, no stepping, no gravity).
+================
+*/
+void idPhysics_Player::SetVRClimbing( bool climbing, const idVec3 &releaseVelocity ) {
+	if ( climbing == m_vrClimbing ) {
+		return;
+	}
+	m_vrClimbing = climbing;
+	current.velocity = climbing ? vec3_zero : releaseVelocity;
+	Activate();
+}
+
+idVec3 idPhysics_Player::VRClimbMove( const idVec3 &delta ) {
+	const idVec3 start = current.origin;
+	if ( delta.LengthSqr() < Square( 0.01f ) ) {
+		return vec3_zero;
+	}
+	trace_t trace;
+	idVec3 pos = start;
+	idVec3 move = delta;
+	idVec3 planes[3];
+	int numPlanes = 0;
+	for ( int bump = 0; bump < 3 && move.LengthSqr() > Square( 0.01f ); bump++ ) {
+		gameLocal.clip.Translation( trace, pos, pos + move, clipModel, clipModel->GetAxis(), clipMask, self );
+		pos = trace.endpos;
+		if ( trace.fraction >= 1.0f ) {
+			break;
+		}
+		move *= ( 1.0f - trace.fraction );
+		const idVec3 n = trace.c.normal;
+		planes[numPlanes++] = n;
+		move -= ( move * n ) * n;
+		for ( int i = 0; i < numPlanes - 1; i++ ) {
+			if ( move * planes[i] < 0.0f ) {
+				move.Zero();		// stuck in a corner
+			}
+		}
+	}
+	if ( pos == start ) {
+		return vec3_zero;
+	}
+	if ( masterEntity ) {
+		idVec3 masterOrigin;
+		idMat3 masterAxis;
+		self->GetMasterPosition( masterOrigin, masterAxis );
+		current.localOrigin = ( pos - masterOrigin ) * masterAxis.Transpose();
+	} else {
+		current.localOrigin = pos;
+	}
+	current.origin = pos;
+	clipModel->Link( gameLocal.clip, self, 0, current.origin, clipModel->GetAxis() );
+	return pos - start;
+}
+
+bool idPhysics_Player::VRTryMantle( const idVec3 &forwardIn ) {
+	idVec3 forward = forwardIn;
+	forward -= ( forward * gravityNormal ) * gravityNormal;
+	if ( forward.Normalize() < 0.001f ) {
+		return false;
+	}
+	PerformMantleToward( forward, true );
+	return IsMantling();
 }
 
 /*

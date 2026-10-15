@@ -7703,6 +7703,12 @@ void idPlayer::Think( void )
 		vrBody.Update( this, renderView );
 	}
 
+	// VR: ropes and ladders are climbed with the hands only
+	physicsObj.SetVRHandsOnlyClimbing( vrHands.IsActive() );
+	if ( !vrHands.IsActive() && physicsObj.IsVRClimbing() ) {
+		physicsObj.SetVRClimbing( false );
+	}
+
 	if ( vrHands.IsActive() ) {
 		// VR: the hands touch and grab things, no view-ray frobbing
 		vrHands.Update( this );

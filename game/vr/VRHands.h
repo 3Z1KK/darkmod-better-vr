@@ -23,6 +23,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "VRArrows.h"
 #include "VRMelee.h"
 #include "VRReadables.h"
+#include "VRClimb.h"
 
 /*
  * VR hands: the player's only way to touch the world.
@@ -71,6 +72,7 @@ public:
 		IK_MOVER,		// a door, lid, drawer... held at a point and moved along its path
 		IK_BOW,			// holding the VR bow (see VRBow.h)
 		IK_STRING,		// drawing the VR bow's string (held = the nocked arrow, if any)
+		IK_CLIMB,		// holding on to a ledge, ladder or rope (see VRClimb.h)
 	};
 
 	// how the hand grips the held body, in the body's own space (for holding now, and finger posing later)
@@ -111,6 +113,11 @@ public:
 	void			EndBowState();
 	// where the hand is drawn while it is on the string
 	void			SetVisualOverride( const idVec3 &pos, const idMat3 &axis ) { overridePos = pos; overrideAxis = axis; }
+
+	// climbing (idVRClimb drives these): the hand holds on at a point and is drawn there
+	void			BeginClimb( const idVec3 &gripPoint );
+	void			SetClimbAnchor( const idVec3 &gripPoint ) { overridePos = gripPoint + climbOffset; }
+	void			EndClimb();
 
 	// where the controller wants the grip point to be
 	idVec3			GetGripTarget() const;
@@ -158,6 +165,7 @@ private:
 	idVec3			overridePos = vec3_zero;	// IK_STRING: where the hand is drawn (on the string)
 	idMat3			overrideAxis = mat3_identity;
 	bool			latchHeld = false;			// IK_MOVER: trigger holds the handle down, the latch is open
+	idVec3			climbOffset = vec3_zero;	// IK_CLIMB: the drawn hand relative to where it holds on
 	void			PressHandle( bool down );
 
 	void			UpdateFingers( float dt );
@@ -201,6 +209,9 @@ public:
 	// the bow: a hand holding the bow or the string lets go / a hand grabs a bow placed in the map
 	void			BowRelease( idPlayer *player, int handIndex ) { bow.OnRelease( player, hands, handIndex ); }
 	bool			BowTakeWorld( idPlayer *player, int handIndex, idEntity *ent ) { return bow.TakeWorldBow( player, hands, handIndex, ent ); }
+	// climbing: a hand holding on lets go / the body hangs from the hands
+	void			ClimbRelease( idPlayer *player, int handIndex ) { climb.OnRelease( player, hands, handIndex ); }
+	bool			IsHanging() const { return climb.IsHanging(); }
 
 	// held objects don't collide with the player; after release they become solid again once they stop overlapping
 	void			MakeNonSolidToPlayer( idEntity *ent );
@@ -222,6 +233,7 @@ private:
 	idVRArrowSelector arrowSelector;
 	idVRMelee		melee;
 	idVRReadables	readables;
+	idVRClimb		climb;
 	int				calibrateAt = 0;
 	idStr			calibrateMode;
 	idList< idEntityPtr<idEntity> > highlighted;

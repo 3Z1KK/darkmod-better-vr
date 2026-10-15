@@ -144,6 +144,21 @@ public:
 	idVec3					VRRoomscaleMove( const idVec3 &delta );
 
 	/**
+	* VR hand climbing (game/vr/VRClimb.cpp): while set, the hands move the body with VRClimbMove and nothing
+	* else does (no gravity, no walking). Clearing it gives the body the release velocity.
+	**/
+	void					SetVRClimbing( bool climbing, const idVec3 &releaseVelocity = vec3_zero );
+	bool					IsVRClimbing() const { return m_vrClimbing; }
+	// move the body through the world: slides along what it hits, no stepping. Returns the move actually made
+	idVec3					VRClimbMove( const idVec3 &delta );
+	// VR: ropes and ladders are climbed by hand only (no attaching by walking or jumping into them)
+	void					SetVRHandsOnlyClimbing( bool on ) { m_vrHandsOnlyClimb = on; }
+	// VR: the game's own mantle toward a direction, as if jump was pressed looking that way. True if it started
+	bool					VRTryMantle( const idVec3 &forward );
+	// standing on the ground (as of the last move)
+	bool					VROnGround() const { return groundPlane; }
+
+	/**
 	* Returns the reference entity velocity.  Nonzero only when the
 	* player is climbing/roping so that their reference frame
 	* is determined by some ent they're attached to
@@ -508,6 +523,8 @@ public:
 	// of the player's view. If so, starts the mantle... 
 	// If the player is already mantling, this does nothing.
 	void PerformMantle();
+	// the same, looking in a given direction (VR: toward a gripped ledge), optionally without the jump release
+	void PerformMantleToward( const idVec3 &forward, bool ignoreJumpRelease );
 
 protected:
 
@@ -515,6 +532,10 @@ protected:
 	* The current mantling phase
 	*/
 	EMantlePhase m_mantlePhase;
+
+	// VR hand climbing (not saved: hands start empty after loading)
+	bool m_vrClimbing;
+	bool m_vrHandsOnlyClimb;
 
 	/**
 	 * greebo: Set to TRUE if the next mantling can start. Set to FALSE at the 

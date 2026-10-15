@@ -802,6 +802,16 @@ void idVRHand::Release( idPlayer *player, bool allowInventory ) {
 		return;
 	}
 
+	if ( kind == IK_CLIMB ) {
+		// lets go of the ledge, ladder or rope
+		interaction = IK_CLIMB;			// (so idVRClimb can end it properly)
+		player->vrHands.ClimbRelease( player, index );
+		interaction = IK_NONE;
+		physPos = visualPos;
+		physValid = true;
+		return;
+	}
+
 	if ( ent == nullptr ) {
 		return;
 	}
@@ -926,6 +936,31 @@ void idVRHand::EndBowState() {
 }
 
 /*
+ * Climbing (idVRClimb decides when): the hand holds on at a point on a ledge, ladder or rope and is drawn
+ * there, where it was when it grabbed, while the real hand moves the body.
+ */
+void idVRHand::BeginClimb( const idVec3 &gripPoint ) {
+	interaction = IK_CLIMB;
+	held = nullptr;
+	carryKinematic = false;
+	carryFromPouch = false;
+	touched = nullptr;
+	const idVec3 handPos = physValid ? physPos : input.pos;
+	climbOffset = handPos - gripPoint;
+	overridePos = handPos;
+	overrideAxis = input.axis;
+}
+
+void idVRHand::EndClimb() {
+	if ( interaction == IK_CLIMB ) {
+		physPos = visualPos;
+		physValid = true;
+		interaction = IK_NONE;
+		held = nullptr;
+	}
+}
+
+/*
  * The visible handle turns down while the trigger holds it (like a hand pressing a door handle) and comes
  * back up when it is let go. Only door handles move; lids and drawers have no handle part.
  */
@@ -1004,6 +1039,13 @@ void idVRHand::UpdateFingers( float dt ) {
 		targets[idVRHandModel::MIDDLE] = 75.0f;
 		targets[idVRHandModel::RING] = 78.0f;
 		targets[idVRHandModel::PINKY] = 80.0f;
+	} else if ( interaction == IK_CLIMB ) {
+		// fingers hooked over the edge / wrapped around the rung or rope
+		targets[idVRHandModel::THUMB] = 45.0f;
+		targets[idVRHandModel::INDEX] = 70.0f;
+		targets[idVRHandModel::MIDDLE] = 72.0f;
+		targets[idVRHandModel::RING] = 74.0f;
+		targets[idVRHandModel::PINKY] = 76.0f;
 	} else if ( interaction == IK_STRING ) {
 		// the string pinched between thumb and index finger, the other fingers tucked away
 		targets[idVRHandModel::THUMB] = 45.0f;
@@ -1046,7 +1088,8 @@ void idVRHand::UpdateVisual( float dt ) {
 			visualAxis = input.axis;
 			break;
 		case IK_STRING:
-			// on the bow's string
+		case IK_CLIMB:
+			// on the bow's string / where it holds on while climbing
 			visualPos = overridePos;
 			visualAxis = overrideAxis;
 			break;
@@ -1080,7 +1123,7 @@ void idVRHand::Update( idPlayer *player, const vrHandInput_t &in, float dt ) {
 	const interactionKind_t interactionBefore = interaction;
 
 	// free hands are stopped by the world
-	if ( interaction != IK_HOLD && interaction != IK_MOVER && interaction != IK_BOW && interaction != IK_STRING ) {
+	if ( interaction != IK_HOLD && interaction != IK_MOVER && interaction != IK_BOW && interaction != IK_STRING && interaction != IK_CLIMB ) {
 		MoveFreeHand( player );
 	}
 
@@ -1246,6 +1289,7 @@ void idVRHands::Init() {
 	arrowSelector.Reset();
 	melee.Reset();
 	readables.Reset();
+	climb.Reset();
 	lastTime = 0;
 	lastDt = 0.0f;
 	initialized = true;
@@ -1766,6 +1810,8 @@ void idVRHands::Update( idPlayer *player ) {
 	movers.Update( dt );
 	// the bow: nocking, drawing, the arrow on the string
 	bow.Update( player, hands, dt );
+	// climbing: the hands holding on move the body
+	climb.Update( player, hands, dt );
 	// swinging the sword or blackjack
 	melee.Update( player, hands, dt );
 	// letters and books in the hand
@@ -1800,13 +1846,21 @@ bool idVRHands::HandleGripPress( idPlayer *player, int handIndex ) {
 		arrowSelector.Confirm( player );
 		return true;
 	}
+	// ropes and vines are climbed, not picked up or frobbed
+	idEntity *touchedEnt = hands[handIndex].GetTouched();
+	if ( touchedEnt != nullptr && idVRClimb::IsClimbEntity( touchedEnt ) && climb.TryGrab( player, hands, handIndex, touchedEnt ) ) {
+		return true;
+	}
 	// the bow: the string (anywhere on the held bow), the bow (left shoulder), an arrow (right shoulder)
 	if ( bow.TryGrab( player, hands, handIndex ) ) {
 		return true;
 	}
-	// an empty hand that touches nothing may be at a holster
-	if ( hands[handIndex].GetTouched() == nullptr ) {
-		return tools.TryDraw( player, hands[handIndex], handIndex, hands[1 - handIndex] );
+	// an empty hand that touches nothing may be at a holster, or at something to climb
+	if ( touchedEnt == nullptr ) {
+		if ( tools.TryDraw( player, hands[handIndex], handIndex, hands[1 - handIndex] ) ) {
+			return true;
+		}
+		return climb.TryGrab( player, hands, handIndex, nullptr );
 	}
 	return false;
 }

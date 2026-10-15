@@ -120,7 +120,7 @@ void idVRBody::Update( idPlayer *player, renderView_t *view ) {
 	}
 
 	const bool canMove = vr_roomscale.GetBool() && !player->AI_DEAD && !player->noclip && !player->spectating
-		&& !phys->IsMantling() && !phys->OnRope() && !phys->OnLadder() && player->GetBindMaster() == nullptr
+		&& !phys->IsMantling() && !phys->OnRope() && !phys->OnLadder() && !phys->IsVRClimbing() && player->GetBindMaster() == nullptr
 		&& !gameLocal.inCinematic;
 
 	idVec3 moved = vec3_zero;
