@@ -57,3 +57,4 @@ private:
 
 extern idCVar vr_roomscale;
 extern idCVar vr_bodyWidth;
+extern idCVar vr_stickCreep;

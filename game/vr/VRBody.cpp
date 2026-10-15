@@ -28,6 +28,7 @@ idCVar vr_roomStepCreepSpeed( "vr_roomStepCreepSpeed", "30", CVAR_GAME | CVAR_FL
 idCVar vr_roomStepWalkSpeed( "vr_roomStepWalkSpeed", "65", CVAR_GAME | CVAR_FLOAT, "VR: real-life walking faster than this (units/s) makes normal walking footsteps" );
 idCVar vr_roomStepStride( "vr_roomStepStride", "28", CVAR_GAME | CVAR_FLOAT, "VR: real-life distance (units) per footstep" );
 idCVar vr_bodyWidth( "vr_bodyWidth", "18", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE, "VR: width of the player's collision body in VR (units; the normal game uses pm_bboxwidth 32). Applies on map load" );
+idCVar vr_stickCreep( "vr_stickCreep", "0.6", CVAR_GAME | CVAR_FLOAT, "VR: moving with the stick tilted less than this (0..1) is creeping: quiet creep footsteps, the speed still follows the stick. 0 = only the creep button" );
 idCVar vr_viewBelowBoxTop( "vr_viewBelowBoxTop", "1", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE, "VR: the camera is this far (units, 1 unit = 2.3 cm) below the top of the player's collision box when standing straight" );
 idCVar vr_headInWallFade( "vr_headInWallFade", "1", CVAR_GAME | CVAR_BOOL, "VR: fade to black when the real head moves into a wall" );
 

@@ -53,9 +53,9 @@ idCVar vr_gripBreakDistance( "vr_gripBreakDistance", "30", CVAR_GAME | CVAR_FLOA
 idCVar vr_gripBreakTime( "vr_gripBreakTime", "500", CVAR_GAME | CVAR_INTEGER, "VR: time (ms) the grip point may stay too far before the grip slips" );
 idCVar vr_gripPressThreshold( "vr_gripPressThreshold", "0.6", CVAR_GAME | CVAR_FLOAT, "VR: grip/trigger value that counts as pressed" );
 idCVar vr_gripReleaseThreshold( "vr_gripReleaseThreshold", "0.35", CVAR_GAME | CVAR_FLOAT, "VR: grip/trigger value that counts as released" );
-idCVar vr_stomachDrop( "vr_stomachDrop", "20", CVAR_GAME | CVAR_FLOAT, "VR: stomach inventory zone, distance (units) below the head" );
+idCVar vr_stomachDrop( "vr_stomachDrop", "15", CVAR_GAME | CVAR_FLOAT, "VR: stomach inventory zone, distance (units) below the head" );
 idCVar vr_stomachForward( "vr_stomachForward", "4", CVAR_GAME | CVAR_FLOAT, "VR: stomach inventory zone, distance (units) in front of the head" );
-idCVar vr_stomachRadius( "vr_stomachRadius", "9", CVAR_GAME | CVAR_FLOAT, "VR: stomach inventory zone radius (units)" );
+idCVar vr_stomachRadius( "vr_stomachRadius", "11.5", CVAR_GAME | CVAR_FLOAT, "VR: stomach inventory zone radius (units)" );
 idCVar vr_ringRadius( "vr_ringRadius", "0.8", CVAR_GAME | CVAR_FLOAT, "VR: radius of the light crystal ring on the left ring finger (game units)" );
 idCVar vr_ringOffset( "vr_ringOffset", "-0.1", CVAR_GAME | CVAR_FLOAT, "VR: ring centre offset from the finger joint towards the back of the finger (game units)" );
 idCVar vr_calibrateHands( "vr_calibrateHands", "", CVAR_GAME, "VR: calibrate the glove position: \"fist\" (bump your fists together), \"palms\" (palms together) or \"reset\"" );
@@ -265,6 +265,22 @@ namespace {
 	bool IsInventoryItem( idEntity *ent ) {
 		const char *invName = ent->spawnArgs.GetString( "inv_name", "" );
 		return invName != nullptr && invName[0] != '\0';
+	}
+
+	// an arrow lying around or stuck in something (the arrow's ammo pickup), not yet a VR arrow
+	bool IsArrowPickup( idEntity *ent ) {
+		if ( ent == nullptr || !ent->IsType( idMoveable::Type ) || idVRBow::IsArrow( ent ) ) {
+			return false;
+		}
+		const idStr weaponName = ent->spawnArgs.GetString( "inv_weapon_name" );
+		if ( weaponName.IsEmpty() ) {
+			return false;
+		}
+		const idDict *weaponDef = gameLocal.FindEntityDefDict( va( "atdm:weapon_%s", weaponName.c_str() ), false );
+		if ( weaponDef != nullptr ) {
+			return idStr::FindText( weaponDef->GetString( "weapon_scriptobject" ), "arrow", false ) >= 0;
+		}
+		return idStr::FindText( ent->spawnArgs.GetString( "classname" ), "arrow", false ) >= 0;
 	}
 
 	void HandsDebug( const char *fmt, ... ) {
@@ -672,6 +688,28 @@ void idVRHand::StartInteraction( idPlayer *player ) {
 		return;
 	}
 
+	if ( IsArrowPickup( ent ) ) {
+		const idStr weaponName = ent->spawnArgs.GetString( "inv_weapon_name" );
+		if ( weaponName == "ropearrow" || weaponName == "vinearrow" ) {
+			// a rope or vine hangs from it: taken back like in the normal game (the rope goes with it)
+			HandsDebug( "hand %d takes back %s", index, ent->name.c_str() );
+			player->m_FrobEntity = ent;
+			player->PerformFrob( EPressed, ent, false );
+			player->m_FrobEntity = nullptr;
+			return;
+		}
+		// an arrow lying around or stuck in something becomes a VR arrow: pulled out of what it's stuck in,
+		// weightless and passing through the world while held, can be nocked, stored at the stomach or put back
+		// at the right shoulder (one arrow of its type)
+		if ( ent->GetBindMaster() != nullptr ) {
+			ent->Unbind();
+		}
+		ent->spawnArgs.Set( "vr_arrow", weaponName.c_str() );
+		ent->spawnArgs.Set( "vr_weightless", "1" );
+		ent->spawnArgs.Set( "removeWithMaster", "0" );
+		HandsDebug( "hand %d pulls out %s (%s)", index, ent->name.c_str(), weaponName.c_str() );
+	}
+
 	if ( ( idVRLockUse::IsWeightless( ent ) || VR_IsSmallObject( ent ) ) && CanHold( ent ) ) {
 		// a key, lockpick or anything smaller than a vase: held exactly where the hand touched it, weightless
 		const idVec3 bodyOrigin = ent->GetPhysics()->GetOrigin();
@@ -795,8 +833,17 @@ void idVRHand::Release( idPlayer *player, bool allowInventory ) {
 	// is the other hand still holding it? (this hand already let go)
 	const bool otherHolds = player->vrHands.CountHolding( ent ) > 0;
 
-	if ( allowInventory && stomachRelease && IsInventoryItem( ent ) && !otherHolds ) {
-		HandsDebug( "hand %d stores %s", index, ent->name.c_str() );
+	// an arrow let go of at the right shoulder goes back into the quiver (like at the stomach)
+	bool atQuiver = false;
+	if ( allowInventory && idVRBow::IsArrow( ent ) ) {
+		idVec3 shoulder;
+		if ( player->vrHands.GetTools().GetShoulderPos( player, false, shoulder ) ) {
+			atQuiver = ( input.pos - shoulder ).LengthSqr() < Square( idVRTools::GetShoulderRadius() );
+		}
+	}
+
+	if ( allowInventory && ( stomachRelease || atQuiver ) && IsInventoryItem( ent ) && !otherHolds ) {
+		HandsDebug( "hand %d stores %s%s", index, ent->name.c_str(), atQuiver ? " (quiver)" : "" );
 		player->vrHands.ReleaseNonSolidToPlayer( ent, true );
 		player->m_FrobEntity = ent;
 		player->PerformFrob( EPressed, ent, false );

@@ -3529,6 +3529,13 @@ void idPlayer::UpdateConditions( void )
 	int creepLimit = cv_pm_creepmod.GetFloat() * 127;
 	AI_CREEP = m_CreepIntent ||
 		(idMath::Abs(usercmd.forwardmove) <= creepLimit && idMath::Abs(usercmd.rightmove) <= creepLimit);
+	// VR: walking slowly with the stick is creeping (quiet creep footsteps); the speed still follows the stick
+	if ( vrBody.IsActive( this ) && vr_stickCreep.GetFloat() > 0.0f ) {
+		const float stick = idVec2( usercmd.forwardmove, usercmd.rightmove ).Length() / 127.0f;
+		if ( stick <= vr_stickCreep.GetFloat() ) {
+			AI_CREEP = true;
+		}
+	}
 }
 
 /*
