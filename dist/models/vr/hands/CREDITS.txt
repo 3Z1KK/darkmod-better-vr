@@ -1,0 +1,10 @@
+VR hand models (glove_left.md5mesh, glove_right.md5mesh) and textures/vr/hands/*
+
+Based on "Glove" by Normal Map Enjoyer
+https://sketchfab.com/3d-models/glove-7cb36be3202e41fcbb444cbf43d83745
+licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+
+Changes: only the glove part is used (bracer, laces and wraps removed), the cuff opening is closed,
+a hand skeleton with finger joints was added, the model was mirrored for the right hand, converted to
+MD5 and the textures were resized and converted (specular map derived from the roughness map).
+Built with tools/vr_hands/build_hands.py.

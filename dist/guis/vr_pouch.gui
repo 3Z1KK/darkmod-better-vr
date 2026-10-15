@@ -1,0 +1,92 @@
+// VR pouch: the inventory panel above the left hand (drawn on a 3D surface, see game/vr/VRPouch.cpp)
+// state: pouch_icon, pouch_name, pouch_group, pouch_count, pouch_position, pouch_has_item, pouch_many
+
+windowDef Desktop
+{
+	rect		0, 0, 640, 480
+	backcolor	0, 0, 0, 0
+	nocursor	1
+
+	windowDef PouchBackground
+	{
+		rect		0, 0, 640, 480
+		background	"guis/assets/vr/pouch_bg"
+		matcolor	1, 1, 1, 1
+		noevents	1
+	}
+
+	// the item group, on the flap
+	windowDef PouchGroup
+	{
+		rect		60, 40, 520, 40
+		text		"gui::pouch_group"
+		textscale	0.32
+		textalign	1
+		forecolor	0.86, 0.74, 0.52, 1
+		noevents	1
+	}
+
+	// the item picture, in the dark recess
+	windowDef PouchIcon
+	{
+		rect		205, 125, 230, 230
+		background	"gui::pouch_icon"
+		matcolor	1, 1, 1, 1
+		visible		"gui::pouch_has_item"
+		noevents	1
+	}
+
+	windowDef PouchCount
+	{
+		rect		440, 300, 140, 50
+		text		"gui::pouch_count"
+		textscale	0.45
+		textalign	0
+		forecolor	0.95, 0.88, 0.68, 1
+		visible		"gui::pouch_has_item"
+		noevents	1
+	}
+
+	windowDef PouchName
+	{
+		rect		50, 362, 540, 50
+		text		"gui::pouch_name"
+		textscale	0.4
+		textalign	1
+		forecolor	0.96, 0.9, 0.74, 1
+		noevents	1
+	}
+
+	windowDef PouchPosition
+	{
+		rect		220, 412, 200, 34
+		text		"gui::pouch_position"
+		textscale	0.26
+		textalign	1
+		forecolor	0.75, 0.64, 0.46, 1
+		noevents	1
+	}
+
+	// "there is more": arrows at the sides
+	windowDef PouchLeft
+	{
+		rect		40, 200, 80, 80
+		text		"<"
+		textscale	0.9
+		textalign	1
+		forecolor	0.85, 0.72, 0.5, 0.8
+		visible		"gui::pouch_many"
+		noevents	1
+	}
+
+	windowDef PouchRight
+	{
+		rect		520, 200, 80, 80
+		text		">"
+		textscale	0.9
+		textalign	1
+		forecolor	0.85, 0.72, 0.5, 0.8
+		visible		"gui::pouch_many"
+		noevents	1
+	}
+}
