@@ -650,19 +650,18 @@ void darkmod_readable_immobile::onFrob()
 			scr = isAccessible( $player1.getEyePos(), $player1.getViewAngles(), fov );
 		}
 
-        if (vrHand)
+        if (!vrHand)
         {
-            // (already centered)
-        }
-        else if (scr_z != -1)
-        {
-            scr_x = (scr_x/fov_x + 1) / 2;
-            scr_y = (scr_y/fov_y + 1) / 2;
-        }
-		else
-		{
-            // Hopefully, this'll move the readable far outside of the screen.
-            scr = '-2000 -2000 -1';
+            if (scr_z != -1)
+            {
+                scr_x = (scr_x/fov_x + 1) / 2;
+                scr_y = (scr_y/fov_y + 1) / 2;
+            }
+            else
+            {
+                // Hopefully, this'll move the readable far outside of the screen.
+                scr = '-2000 -2000 -1';
+            }
         }
 
 		// A readable can be closed when the player turns away from it (immobile readable)
