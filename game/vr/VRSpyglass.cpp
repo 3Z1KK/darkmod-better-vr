@@ -26,7 +26,7 @@ idCVar vr_spyglassMinZoom( "vr_spyglassMinZoom", "1.5", CVAR_GAME | CVAR_FLOAT, 
 idCVar vr_spyglassMaxZoom( "vr_spyglassMaxZoom", "4.5", CVAR_GAME | CVAR_FLOAT, "VR spyglass: strongest magnification (4.5 = the vanilla spyglass at its closest, fov 25 against 90)" );
 idCVar vr_spyglassZoomSpeed( "vr_spyglassZoomSpeed", "1.2", CVAR_GAME | CVAR_FLOAT, "VR spyglass: zoom speed with the stick fully pushed (factor e^this per second)" );
 idCVar vr_spyglassEyeRelief( "vr_spyglassEyeRelief", "2", CVAR_GAME | CVAR_FLOAT, "VR spyglass: eye to eyepiece distance (units) the magnification is worked out for" );
-idCVar vr_spyglassImageFlip( "vr_spyglassImageFlip", "3", CVAR_GAME | CVAR_INTEGER, "VR spyglass: flip the picture, 1 = left/right, 2 = up/down, 3 = both (the vanilla camera screens flip both)" );
+idCVar vr_spyglassImageFlip( "vr_spyglassImageFlip", "2", CVAR_GAME | CVAR_INTEGER, "VR spyglass: flip the picture, 1 = left/right, 2 = up/down (rendered pictures are stored bottom-up), 3 = both. A mirrored picture seems to turn when the spyglass is turned" );
 idCVar vr_spyglassFisheye( "vr_spyglassFisheye", "0.35", CVAR_GAME | CVAR_FLOAT, "VR spyglass: how much the picture is squeezed towards the edge of the lens (0 = flat). Applies on map load" );
 idCVar vr_spyglassNearClip( "vr_spyglassNearClip", "6", CVAR_GAME | CVAR_FLOAT, "VR spyglass: with the head this close to an eyepiece (units) the near clip plane comes closer, so the eyepiece isn't cut away" );
 idCVar vr_spyglassDebug( "vr_spyglassDebug", "0", CVAR_GAME | CVAR_BOOL, "VR spyglass: log swaps and zoom" );
@@ -35,7 +35,7 @@ namespace {
 	const char *VR_SPYGLASS_DEF = "atdm:vr_spyglass";
 
 	// models/darkmod/player_equipment/spyglass.lwo: the tube runs along x, eyepiece (thin end) at +x, objective at -x
-	const float LENS_X = 9.86f;			// eyepiece glass, just inside the rim at 9.91
+	const float LENS_X = 9.94f;			// eyepiece glass, just in front of the eyepiece's end face (9.91), which is closed
 	const float LENS_R = 0.56f;			// inner radius of the eyepiece
 	const float CAP_X = -9.12f;			// dark glass in the objective end (rim at -9.2)
 	const float CAP_R = 0.97f;
