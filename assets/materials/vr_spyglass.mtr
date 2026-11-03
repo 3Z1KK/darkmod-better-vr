@@ -44,3 +44,15 @@ vr/spyglass_cap
 		rgb		0.5
 	}
 }
+
+// at the eye: the dark rim around the picture
+vr/spyglass_rim
+{
+	noShadows
+	noSelfShadow
+	{
+		blend	gl_one, gl_zero
+		map		_white
+		rgb		0
+	}
+}

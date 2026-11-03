@@ -29,6 +29,11 @@ idCVar vr_spyglassEyeRelief( "vr_spyglassEyeRelief", "2", CVAR_GAME | CVAR_FLOAT
 idCVar vr_spyglassImageFlip( "vr_spyglassImageFlip", "2", CVAR_GAME | CVAR_INTEGER, "VR spyglass: flip the picture, 1 = left/right, 2 = up/down (rendered pictures are stored bottom-up), 3 = both. A mirrored picture seems to turn when the spyglass is turned" );
 idCVar vr_spyglassFisheye( "vr_spyglassFisheye", "0.35", CVAR_GAME | CVAR_FLOAT, "VR spyglass: how much the picture is squeezed towards the edge of the lens (0 = flat). Applies on map load" );
 idCVar vr_spyglassNearClip( "vr_spyglassNearClip", "6", CVAR_GAME | CVAR_FLOAT, "VR spyglass: with the head this close to an eyepiece (units) the near clip plane comes closer, so the eyepiece isn't cut away" );
+idCVar vr_spyglassEnterDistance( "vr_spyglassEnterDistance", "3.5", CVAR_GAME | CVAR_FLOAT, "VR spyglass: the eyepiece this close to an eye (units, 1 unit = 2.3 cm) puts that eye to the spyglass" );
+idCVar vr_spyglassExitDistance( "vr_spyglassExitDistance", "9", CVAR_GAME | CVAR_FLOAT, "VR spyglass: the (invisible) eyepiece this far from the eye takes the eye off the spyglass again" );
+idCVar vr_spyglassSmoothing( "vr_spyglassSmoothing", "0.12", CVAR_GAME | CVAR_FLOAT, "VR spyglass: at the eye, how long (s) the spyglass takes to follow the hand (a little weight against hand shake)" );
+idCVar vr_spyglassEyeDistance( "vr_spyglassEyeDistance", "2.75", CVAR_GAME | CVAR_FLOAT, "VR spyglass: distance between the eyes (units, 2.75 = 6.3 cm)" );
+idCVar vr_spyglassRimAngle( "vr_spyglassRimAngle", "45", CVAR_GAME | CVAR_FLOAT, "VR spyglass: at the eye, the dark rim around the picture reaches this far from the middle of the view (degrees)" );
 idCVar vr_spyglassDebug( "vr_spyglassDebug", "0", CVAR_GAME | CVAR_BOOL, "VR spyglass: log swaps and zoom" );
 
 namespace {
@@ -122,6 +127,80 @@ namespace {
 		model->AddSurface( surf );
 	}
 
+	// a flat ring at x facing +x, from radius r0 to r1
+	void BuildRing( idRenderModel *model, int id, const char *material, float x, float r0, float r1 ) {
+		const int numVerts = 2 * SEGMENTS;
+		const int numIndexes = 6 * SEGMENTS;
+		modelSurface_t surf;
+		surf.id = id;
+		surf.material = declManager->FindMaterial( material );
+		surf.geometry = model->AllocSurfaceTriangles( numVerts, numIndexes );
+		srfTriangles_t *tri = surf.geometry;
+		tri->numVerts = numVerts;
+		tri->numIndexes = numIndexes;
+		tri->bounds.Clear();
+		for ( int v = 0; v < numVerts; v++ ) {
+			const float r = v < SEGMENTS ? r0 : r1;
+			const float angle = idMath::TWO_PI * ( v % SEGMENTS ) / SEGMENTS;
+			idDrawVert &dv = tri->verts[v];
+			dv.Clear();
+			dv.xyz.Set( x, idMath::Cos( angle ) * r, idMath::Sin( angle ) * r );
+			dv.st.Set( 0.5f, 0.5f );
+			dv.normal.Set( 1, 0, 0 );
+			dv.tangents[0].Set( 0, 1, 0 );
+			dv.tangents[1].Set( 0, 0, -1 );
+			dv.color[0] = dv.color[1] = dv.color[2] = dv.color[3] = 255;
+			tri->bounds.AddPoint( dv.xyz );
+		}
+		int n = 0;
+		for ( int s = 0; s < SEGMENTS; s++ ) {
+			const int a = s, b = ( s + 1 ) % SEGMENTS, c = a + SEGMENTS, d = b + SEGMENTS;
+			// clockwise seen from +x (see BuildDisc)
+			tri->indexes[n++] = a; tri->indexes[n++] = d; tri->indexes[n++] = c;
+			tri->indexes[n++] = a; tri->indexes[n++] = b; tri->indexes[n++] = d;
+		}
+		tri->tangentsCalculated = true;
+		tri->facePlanesCalculated = false;
+		tri->generateNormals = false;
+		model->AddSurface( surf );
+	}
+
+	float ApparentHalfAngle() {
+		return idMath::ATan( LENS_R, Max( 0.1f, vr_spyglassEyeRelief.GetFloat() ) );
+	}
+
+	// at the eye: the picture as a unit disc at x = 0 facing +x, and the dark rim around it (scaled by the render
+	// entity so the disc covers the eyepiece's angle)
+	idRenderModel *eyeModel = nullptr;
+	float eyeModelRim = 0.0f;
+	idRenderModel *GetEyeModel() {
+		const float rimHalf = DEG2RAD( idMath::ClampFloat( 20.0f, 80.0f, vr_spyglassRimAngle.GetFloat() ) );
+		const float rim = Max( 1.05f, idMath::Tan( rimHalf ) / idMath::Tan( ApparentHalfAngle() ) );
+		if ( eyeModel != nullptr && eyeModelRim == rim ) {
+			return eyeModel;
+		}
+		idRenderModel *model = renderModelManager->AllocModel();
+		model->InitEmpty( "_vr_spyglass_eye" );
+		BuildDisc( model, 0, "vr/spyglass_lens", 0.0f, 1.0f, true, true );
+		BuildRing( model, 1, "vr/spyglass_rim", 0.0f, 0.999f, rim );
+		eyeModel = model;		// (an old one is left alone: it may still be referenced this frame)
+		eyeModelRim = rim;
+		return model;
+	}
+
+	// the rotation taking direction a onto direction b
+	idMat3 RotationBetween( const idVec3 &a, const idVec3 &b ) {
+		idVec3 axis = a.Cross( b );
+		const float s = axis.Normalize();
+		if ( s < 1e-5f ) {
+			return mat3_identity;
+		}
+		const float angle = RAD2DEG( idMath::ATan( s, a * b ) );
+		const idMat3 r = idRotation( vec3_origin, axis, angle ).ToMat3();
+		// (used as a * r; make sure of the direction)
+		return ( a * r - b ).LengthSqr() < ( a * r.Transpose() - b ).LengthSqr() ? r : r.Transpose();
+	}
+
 	idRenderModel *lensModel = nullptr;
 	idRenderModel *GetLensModel() {
 		if ( lensModel != nullptr ) {
@@ -155,8 +234,43 @@ namespace {
 	float LensFov( float zoom ) {
 		// magnification against the naked eye: the lens seen from the eye covers a fixed angle, the camera
 		// squeezes zoom times less of the world into it
-		const float apparentHalf = idMath::ATan( LENS_R, Max( 0.1f, vr_spyglassEyeRelief.GetFloat() ) );
-		return RAD2DEG( 2.0f * idMath::ATan( idMath::Tan( apparentHalf ) / Max( 0.1f, zoom ) ) );
+		return RAD2DEG( 2.0f * idMath::ATan( idMath::Tan( ApparentHalfAngle() ) / Max( 0.1f, zoom ) ) );
+	}
+
+	float SpyglassZoom( const idEntity *ent ) {
+		const float minZoom = vr_spyglassMinZoom.GetFloat();
+		return idMath::ClampFloat( minZoom, Max( minZoom, vr_spyglassMaxZoom.GetFloat() ), ent->spawnArgs.GetFloat( "vr_zoom", vr_spyglassMinZoom.GetString() ) );
+	}
+
+	void FillCameraView( renderView_t &view, const idVec3 &origin, const idMat3 &axis, float zoom ) {
+		memset( &view, 0, sizeof( view ) );
+		for ( int i = 0; i < MAX_GLOBAL_SHADER_PARMS; i++ ) {
+			view.shaderParms[i] = gameLocal.globalShaderParms[i];
+		}
+		view.globalMaterial = gameLocal.GetGlobalMaterial();
+		view.time = gameLocal.time;
+		view.x = 0;
+		view.y = 0;
+		view.width = SCREEN_WIDTH;
+		view.height = SCREEN_HEIGHT;
+		view.fov_x = view.fov_y = LensFov( zoom );
+		view.vieworg = origin;
+		view.viewaxis = axis;
+		view.initialVieworg = origin;
+		view.initialViewaxis = axis;
+		view.viewID = VID_SUBVIEW;
+	}
+
+	void SetLensParms( renderEntity_t &re, bool live ) {
+		re.shaderParms[SHADERPARM_RED] = re.shaderParms[SHADERPARM_GREEN] = re.shaderParms[SHADERPARM_BLUE] = 1.0f;
+		re.shaderParms[SHADERPARM_ALPHA] = 1.0f;
+		// picture flips (parm4/5 scale, parm6/7 translate, as the vanilla camera screens do it) and live / dark glass (parm8)
+		const int flip = vr_spyglassImageFlip.GetInteger();
+		re.shaderParms[4] = ( flip & 1 ) ? -1.0f : 1.0f;
+		re.shaderParms[5] = ( flip & 2 ) ? -1.0f : 1.0f;
+		re.shaderParms[6] = ( flip & 1 ) ? -1.0f : 0.0f;
+		re.shaderParms[7] = ( flip & 2 ) ? -1.0f : 0.0f;
+		re.shaderParms[8] = live ? 1.0f : 0.0f;
 	}
 }
 
@@ -198,6 +312,8 @@ void idVRSpyglass::Reset() {
 		delete lens;
 	}
 	lenses.Clear();
+	eyeEnt = nullptr;
+	eyeHandle = -1;
 	nextScan = 0;
 	eyeAtLens = false;
 	zoomStick[0] = zoomStick[1] = 0.0f;
@@ -210,6 +326,7 @@ void idVRSpyglass::Free() {
 		delete lens;
 	}
 	lenses.Clear();
+	ExitEyeMode();
 	eyeAtLens = false;
 	LockTurning( false );
 }
@@ -310,7 +427,8 @@ bool idVRSpyglass::NearPlayer( idPlayer *player, const idVec3 &pos ) const {
 
 void idVRSpyglass::UpdateLens( idPlayer *player, lens_t &lens ) {
 	idEntity *ent = lens.ent.GetEntity();
-	if ( ent == nullptr || ent->IsHidden() || !gameRenderWorld ) {
+	if ( ent == nullptr || ent->IsHidden() || !gameRenderWorld || ent == eyeEnt.GetEntity() ) {
+		// (at the eye, the picture is drawn in front of the eye instead)
 		FreeLens( lens );
 		return;
 	}
@@ -325,26 +443,9 @@ void idVRSpyglass::UpdateLens( idPlayer *player, lens_t &lens ) {
 	}
 
 	if ( live ) {
-		// the far end's camera looks out along the tube; turning the spyglass about its length turns the picture
-		const float zoom = idMath::ClampFloat( vr_spyglassMinZoom.GetFloat(), Max( vr_spyglassMinZoom.GetFloat(), vr_spyglassMaxZoom.GetFloat() ),
-			ent->spawnArgs.GetFloat( "vr_zoom", vr_spyglassMinZoom.GetString() ) );
-		renderView_t &view = lens.view;
-		memset( &view, 0, sizeof( view ) );
-		for ( int i = 0; i < MAX_GLOBAL_SHADER_PARMS; i++ ) {
-			view.shaderParms[i] = gameLocal.globalShaderParms[i];
-		}
-		view.globalMaterial = gameLocal.GetGlobalMaterial();
-		view.time = gameLocal.time;
-		view.x = 0;
-		view.y = 0;
-		view.width = SCREEN_WIDTH;
-		view.height = SCREEN_HEIGHT;
-		view.fov_x = view.fov_y = LensFov( zoom );
-		view.vieworg = origin + idVec3( CAMERA_X, 0, 0 ) * axis;
-		view.viewaxis = idMat3( -axis[0], -axis[1], axis[2] );
-		view.initialVieworg = view.vieworg;
-		view.initialViewaxis = view.viewaxis;
-		view.viewID = VID_SUBVIEW;
+		// the far end's camera looks out along the tube; with the spyglass, the camera turns about its length too
+		// (the picture is on the glass, which turns the same way: the world stays level)
+		FillCameraView( lens.view, origin + idVec3( CAMERA_X, 0, 0 ) * axis, idMat3( -axis[0], -axis[1], axis[2] ), SpyglassZoom( ent ) );
 	}
 
 	renderEntity_t &re = lens.re;
@@ -356,15 +457,7 @@ void idVRSpyglass::UpdateLens( idPlayer *player, lens_t &lens ) {
 	re.noShadow = true;
 	re.noSelfShadow = true;
 	re.suppressSurfaceInViewID = VID_LIGHTGEM;
-	re.shaderParms[SHADERPARM_RED] = re.shaderParms[SHADERPARM_GREEN] = re.shaderParms[SHADERPARM_BLUE] = 1.0f;
-	re.shaderParms[SHADERPARM_ALPHA] = 1.0f;
-	// picture flips (parm4/5 scale, parm6/7 translate, as the vanilla camera screens do it) and live / dark glass (parm8)
-	const int flip = vr_spyglassImageFlip.GetInteger();
-	re.shaderParms[4] = ( flip & 1 ) ? -1.0f : 1.0f;
-	re.shaderParms[5] = ( flip & 2 ) ? -1.0f : 1.0f;
-	re.shaderParms[6] = ( flip & 1 ) ? -1.0f : 0.0f;
-	re.shaderParms[7] = ( flip & 2 ) ? -1.0f : 0.0f;
-	re.shaderParms[8] = live ? 1.0f : 0.0f;
+	SetLensParms( re, live );
 	re.remoteRenderView = live ? &lens.view : nullptr;
 	if ( lens.handle == -1 ) {
 		lens.handle = gameRenderWorld->AddEntityDef( &re );
@@ -396,9 +489,142 @@ void idVRSpyglass::Update( idPlayer *player, idVRHand hands[2], float dt ) {
 	}
 }
 
-void idVRSpyglass::UpdateRender( idPlayer *player ) {
+void idVRSpyglass::EyePositions( idPlayer *player, idVec3 eyes[2], idMat3 &headAxis ) const {
+	const renderView_t *view = player->GetRenderView();
+	if ( view == nullptr ) {
+		eyes[0] = eyes[1] = player->GetEyePosition();
+		headAxis = player->viewAxis;
+		return;
+	}
+	// the headset's origin is between the eyes
+	const idVec3 head = player->vrBody.LocalToWorld( view, player->usercmd.vrHeadPos );
+	headAxis = player->usercmd.vrHeadAxis.ToMat3() * view->viewaxis;
+	const float half = 0.5f * vr_spyglassEyeDistance.GetFloat();
+	eyes[0] = head + headAxis[1] * half;
+	eyes[1] = head - headAxis[1] * half;
+}
+
+void idVRSpyglass::ExitEyeMode() {
+	idEntity *ent = eyeEnt.GetEntity();
+	if ( ent != nullptr ) {
+		ent->GetRenderEntity()->suppressSurfaceInViewID = eyeSavedSuppress;
+		ent->UpdateVisuals();
+		SpyglassDebug( "%s: off the eye", ent->name.c_str() );
+	}
+	eyeEnt = nullptr;
+	if ( eyeHandle != -1 && gameRenderWorld ) {
+		gameRenderWorld->FreeEntityDef( eyeHandle );
+	}
+	eyeHandle = -1;
+}
+
+void idVRSpyglass::UpdateEyeMode( idPlayer *player, idVRHand hands[2] ) {
+	idVec3 eyes[2];
+	idMat3 headAxis;
+	EyePositions( player, eyes, headAxis );
+
+	// still at the eye? (dropped, put away, or the hand taken away from the head ends it)
+	idEntity *ent = eyeEnt.GetEntity();
+	if ( ent != nullptr ) {
+		const idVec3 lensPos = ent->GetPhysics()->GetOrigin() + idVec3( LENS_X, 0, 0 ) * ent->GetPhysics()->GetAxis();
+		if ( HeldSpyglass( hands[eyeHand] ) != ent || ent->IsHidden() || !hands[eyeHand].IsTracked()
+			|| ( lensPos - eyes[eyeIndex] ).LengthFast() > vr_spyglassExitDistance.GetFloat() ) {
+			ExitEyeMode();
+			ent = nullptr;
+		}
+	} else if ( eyeHandle != -1 ) {
+		ExitEyeMode();
+	}
+
+	// put to an eye?
+	if ( ent == nullptr ) {
+		for ( int h = 0; h < 2 && ent == nullptr; h++ ) {
+			idEntity *held = HeldSpyglass( hands[h] );
+			if ( held == nullptr ) {
+				continue;
+			}
+			const idMat3 axis = held->GetPhysics()->GetAxis();
+			const idVec3 lensPos = held->GetPhysics()->GetOrigin() + idVec3( LENS_X, 0, 0 ) * axis;
+			for ( int e = 0; e < 2; e++ ) {
+				if ( ( lensPos - eyes[e] ).LengthFast() < vr_spyglassEnterDistance.GetFloat() ) {
+					ent = held;
+					eyeEnt = held;
+					eyeIndex = e;
+					eyeHand = h;
+					eyeDir = -axis[0];
+					idVec3 handDir = hands[h].GetInput().pos - eyes[e];
+					handDir.Normalize();
+					eyeAimOffset = RotationBetween( handDir, eyeDir );
+					eyeLastTime = gameLocal.time;
+					eyeSavedSuppress = held->GetRenderEntity()->suppressSurfaceInViewID;
+					// the spyglass itself vanishes from the player's view (it would be inside the face)
+					held->GetRenderEntity()->suppressSurfaceInViewID = VID_PLAYER_VIEW;
+					held->UpdateVisuals();
+					SpyglassDebug( "%s: at the %s eye", held->name.c_str(), e == 0 ? "left" : "right" );
+					break;
+				}
+			}
+		}
+	}
+	if ( ent == nullptr || !gameRenderWorld ) {
+		return;
+	}
+
+	// aim: the hand's direction from the eye (not its wobbly rotation), with a little weight
+	const float dt = Max( 0, gameLocal.time - eyeLastTime ) * 0.001f;
+	eyeLastTime = gameLocal.time;
+	const idVec3 &eye = eyes[eyeIndex];
+	idVec3 handDir = hands[eyeHand].GetInput().pos - eye;
+	if ( handDir.Normalize() > 0.5f ) {
+		const idVec3 target = handDir * eyeAimOffset;
+		const float tau = Max( 0.001f, vr_spyglassSmoothing.GetFloat() );
+		const float follow = 1.0f - idMath::Exp( -dt / tau );
+		eyeDir += ( target - eyeDir ) * follow;
+		eyeDir.Normalize();
+	}
+	// the picture keeps the head's level (turning the head turns it, as with a real spyglass at the eye)
+	idVec3 up = headAxis[2] - eyeDir * ( headAxis[2] * eyeDir );
+	if ( up.Normalize() < 0.1f ) {
+		up = idVec3( 0, 0, 1 ) - eyeDir * eyeDir.z;
+		up.Normalize();
+	}
+	const idVec3 left = up.Cross( eyeDir );
+
+	// the camera at the far end of the (now invisible) tube, not inside a wall
+	trace_t tr;
+	const idVec3 farEnd = eye + eyeDir * ( LENS_X - CAMERA_X );
+	gameLocal.clip.TracePoint( tr, eye, farEnd, MASK_SOLID, player );
+	const idVec3 camPos = tr.fraction < 1.0f ? tr.endpos - eyeDir * 1.0f : farEnd;
+	FillCameraView( eyeView, camPos, idMat3( eyeDir, left, up ), SpyglassZoom( ent ) );
+
+	// the picture right in front of the eye, as big as the eyepiece looks from there
+	const float dist = 1.0f;
+	const float radius = dist * idMath::Tan( ApparentHalfAngle() );
+	idRenderModel *model = GetEyeModel();
+	memset( &eyeRe, 0, sizeof( eyeRe ) );
+	eyeRe.hModel = model;
+	eyeRe.origin = eye + eyeDir * dist;
+	const idVec3 x = -eyeDir;
+	const idVec3 y = up.Cross( x );		// the viewer's right
+	eyeRe.axis = idMat3( x * radius, y * radius, up * radius );
+	eyeRe.bounds = model->Bounds();
+	eyeRe.noShadow = true;
+	eyeRe.noSelfShadow = true;
+	eyeRe.suppressSurfaceInViewID = VID_LIGHTGEM;
+	eyeRe.weaponDepthHack = true;		// never behind anything (a wall right at the face)
+	SetLensParms( eyeRe, true );
+	eyeRe.remoteRenderView = &eyeView;
+	if ( eyeHandle == -1 ) {
+		eyeHandle = gameRenderWorld->AddEntityDef( &eyeRe );
+	} else {
+		gameRenderWorld->UpdateEntityDef( eyeHandle, &eyeRe );
+	}
+}
+
+void idVRSpyglass::UpdateRender( idPlayer *player, idVRHand hands[2] ) {
+	UpdateEyeMode( player, hands );
 	const idVec3 head = HeadWorld( player );
-	bool closeToEye = false;
+	bool closeToEye = eyeEnt.GetEntity() != nullptr;
 	for ( int i = lenses.Num() - 1; i >= 0; i-- ) {
 		lens_t *lens = lenses[i];
 		idEntity *ent = lens->ent.GetEntity();

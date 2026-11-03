@@ -1981,7 +1981,7 @@ void idVRHands::PostThink( idPlayer *player ) {
 	hands[1].UpdateVisual( lastDt );
 	bow.UpdateRender( player, hands );
 	readables.UpdatePanels( player, hands );
-	spyglass.UpdateRender( player );
+	spyglass.UpdateRender( player, hands );
 	UpdateLightCrystal( player );
 }
 

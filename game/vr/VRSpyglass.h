@@ -27,6 +27,12 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
  * The holding hand's stick up/down zooms (vr_spyglassMinZoom .. vr_spyglassMaxZoom, the vanilla maximum); that
  * stick's own job (walking on the left, turning on the right) is off while it holds the spyglass.
  *
+ * At the eye: the eyepiece brought to one eye (vr_spyglassEnterDistance) puts that eye to the spyglass. The spyglass
+ * disappears from the player's view (no clipping through the face) and the picture is drawn right in front of that
+ * eye, with a dark rim around it (vr_spyglassRimAngle); the other eye sees normally (close it). The holding hand
+ * now only aims: the spyglass pivots about the eye, smoothed (vr_spyglassSmoothing) against hand shake, and its
+ * picture keeps the head's level. Letting go or taking the hand away (vr_spyglassExitDistance) ends it.
+ *
  * Spyglasses in the map (vanilla moveable or tool spyglasses, open or closed) are swapped for the VR spyglass when
  * the map runs in VR; the vanilla inventory spyglass becomes one when taken out of the pouch.
  */
@@ -44,7 +50,7 @@ public:
 	// after the hands moved: swap vanilla spyglasses, zoom
 	void			Update( idPlayer *player, idVRHand hands[2], float dt );
 	// after everything moved this frame: place the lenses and their cameras
-	void			UpdateRender( idPlayer *player );
+	void			UpdateRender( idPlayer *player, idVRHand hands[2] );
 
 	// the head is so close to an eyepiece that the near clip plane must come closer
 	bool			WantsCloseNearPlane() const { return eyeAtLens; }
@@ -68,10 +74,25 @@ private:
 	void			FreeLens( lens_t &lens );
 	bool			NearPlayer( idPlayer *player, const idVec3 &pos ) const;
 	void			LockTurning( bool lock );
+	void			EyePositions( idPlayer *player, idVec3 eyes[2], idMat3 &headAxis ) const;
+	void			UpdateEyeMode( idPlayer *player, idVRHand hands[2] );
+	void			ExitEyeMode();
 
 	idList<lens_t *> lenses;
 	int				nextScan = 0;
 	bool			eyeAtLens = false;
 	float			zoomStick[2] = { 0.0f, 0.0f };	// -1..1 per hand, while it holds a spyglass
 	bool			turnLocked = false;
+
+	// a spyglass at the eye
+	idEntityPtr<idEntity> eyeEnt;
+	int				eyeIndex = 0;					// 0 = left eye, 1 = right eye
+	int				eyeHand = 0;					// the hand aiming it
+	idVec3			eyeDir;							// smoothed aim
+	idMat3			eyeAimOffset;					// hand direction (from the eye) -> aim, fixed when put to the eye
+	int				eyeLastTime = 0;
+	int				eyeSavedSuppress = 0;
+	renderEntity_t	eyeRe;
+	qhandle_t		eyeHandle = -1;
+	renderView_t	eyeView;
 };
