@@ -1,0 +1,29 @@
+/**
+ * VR spyglass (game/vr/VRSpyglass.cpp): the open vanilla spyglass with a live picture in the eyepiece. In VR, every
+ * spyglass in the map (moveable or tool, open or closed) is swapped for this one, and the vanilla inventory spyglass
+ * becomes one when taken out of the pouch. Stored at the stomach it is the inventory's Spyglass.
+ */
+
+entityDef atdm:vr_spyglass
+{
+	"inherit"			"atdm:moveable_spyglass"
+	"editor_displayFolder"	"Moveables/Player_tools"
+	"editor_usage"		"VR spyglass (live picture in the eyepiece). Placed spyglasses are swapped for it in VR, no need to place it"
+
+	"vr_spyglass"		"1"
+	"vr_weightless"		"1"
+	"grabable"			"1"
+	"frobable"			"1"
+
+	// the inventory's spyglass (as atdm:playertools_spyglass, but without its full-screen zoom script)
+	"inv_name"			"#str_02396"	// Spyglass
+	"inv_category"		"#str_02394"	// Tools
+	"inv_icon"			"guis/assets/hud/inventory_icons/spyglass_icon"
+	"inv_target"		"player1"
+	"inv_stackable"		"0"
+	"inv_count"			"1"
+	"inv_loot_type"		"0"
+	"inv_droppable"		"1"
+	"inv_map_start"		"0"
+	"snd_acquire"		"tool_pickup"
+}

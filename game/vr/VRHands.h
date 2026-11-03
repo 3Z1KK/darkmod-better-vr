@@ -24,6 +24,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "VRMelee.h"
 #include "VRReadables.h"
 #include "VRClimb.h"
+#include "VRSpyglass.h"
 
 /*
  * VR hands: the player's only way to touch the world.
@@ -212,6 +213,8 @@ public:
 	// climbing: a hand holding on lets go / the body hangs from the hands
 	void			ClimbRelease( idPlayer *player, int handIndex ) { climb.OnRelease( player, hands, handIndex ); }
 	bool			IsHanging() const { return climb.IsHanging(); }
+	// the spyglass eyepiece is at the head: the view needs a closer near clip plane
+	bool			WantsCloseNearPlane() const { return initialized && spyglass.WantsCloseNearPlane(); }
 
 	// held objects don't collide with the player; after release they become solid again once they stop overlapping
 	void			MakeNonSolidToPlayer( idEntity *ent );
@@ -234,6 +237,7 @@ private:
 	idVRMelee		melee;
 	idVRReadables	readables;
 	idVRClimb		climb;
+	idVRSpyglass	spyglass;
 	int				calibrateAt = 0;
 	idStr			calibrateMode;
 	idList< idEntityPtr<idEntity> > highlighted;

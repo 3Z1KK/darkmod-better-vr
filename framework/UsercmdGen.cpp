@@ -894,6 +894,7 @@ void idUsercmdGenLocal::MakeCurrent( void ) {
 		cmd.vrHeadFlags = ( poseInput.headTracked ? VR_HEAD_TRACKED : 0 ) | ( poseInput.headFloorValid ? VR_HEAD_FLOOR : 0 );
 		cmd.vrButtons = (byte)poseInput.buttons;
 		cmd.vrTurnStick = idMath::ClampChar( joystickAxis[AXIS_YAW] );
+		cmd.vrTurnStickY = idMath::ClampChar( (int)( 127.0f * poseInput.turnStickY ) );
 
 		// check to make sure the angles haven't wrapped
 		if ( viewangles[PITCH] - oldAngles[PITCH] > 90 ) {
@@ -1188,6 +1189,7 @@ void idUsercmdGenLocal::Joystick( void ) {
 	poseInput.headFloorValid = false;
 	poseInput.headFloorZ = 0.0f;
 	poseInput.buttons = 0;
+	poseInput.turnStickY = 0.0f;
 	vrBackend->UpdateInput( joystickAxis, stateChanges, poseInput );
 	for ( auto change : stateChanges ) {
 		if ( change.active ) {

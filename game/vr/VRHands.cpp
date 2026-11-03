@@ -1291,6 +1291,7 @@ void idVRHands::Init() {
 	melee.Reset();
 	readables.Reset();
 	climb.Reset();
+	spyglass.Reset();
 	lastTime = 0;
 	lastDt = 0.0f;
 	initialized = true;
@@ -1305,6 +1306,7 @@ void idVRHands::Shutdown() {
 	bow.Free();
 	melee.Free();
 	readables.Free();
+	spyglass.Free();
 	if ( crystalHandle != -1 && gameRenderWorld ) {
 		gameRenderWorld->FreeEntityDef( crystalHandle );
 	}
@@ -1832,6 +1834,8 @@ void idVRHands::Update( idPlayer *player ) {
 	melee.Update( player, hands, dt );
 	// letters and books in the hand
 	readables.Update( player, hands );
+	// spyglasses: swapping vanilla ones, zoom
+	spyglass.Update( player, hands, dt );
 
 	tools.Update( player, dt );
 	pouch.UpdatePendingGrabberItem( player, hands[0] );
@@ -1850,6 +1854,7 @@ void idVRHands::FilterInput( idPlayer *player, usercmd_t &cmd ) {
 	}
 	pouch.UpdateInput( player, cmd, hands[0] );
 	arrowSelector.UpdateInput( player, cmd, hands[1] );
+	spyglass.UpdateInput( player, cmd, hands );
 }
 
 bool idVRHands::HandleGripPress( idPlayer *player, int handIndex ) {
@@ -1976,6 +1981,7 @@ void idVRHands::PostThink( idPlayer *player ) {
 	hands[1].UpdateVisual( lastDt );
 	bow.UpdateRender( player, hands );
 	readables.UpdatePanels( player, hands );
+	spyglass.UpdateRender( player );
 	UpdateLightCrystal( player );
 }
 

@@ -39,6 +39,7 @@ struct poseInput_t {
 	bool headFloorValid;
 	float headFloorZ;
 	int buttons;		// VR_BUTTON_* (game side, see UsercmdGen.h)
+	float turnStickY;	// the turning stick's up/down (-1..1), for the game (spyglass zoom)
 };
 
 class OpenXRInput {
@@ -75,6 +76,7 @@ public:
 		XR_POUCH,
 		XR_ARROWS,
 		XR_LANTERN,
+		XR_TURN_Y,
 
 		XR_NUM_ACTIONS,
 		XR_INVALID = -1,

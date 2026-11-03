@@ -8943,6 +8943,11 @@ void idPlayer::CalculateRenderView( void ) {
 		
 		// field of view
 		gameLocal.CalcFov( CalcFov( true ), renderView->fov_x, renderView->fov_y );
+
+		// VR: an eyepiece held to the eye is closer than the normal near clip plane
+		if ( vrHands.WantsCloseNearPlane() ) {
+			renderView->cramZNear = true;
+		}
 	}
 
 	if ( renderView->fov_y == 0 ) {

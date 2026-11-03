@@ -60,6 +60,7 @@ namespace {
 		{ OpenXRInput::XR_POUCH, "pouch", "Open the pouch (inventory) on the left hand" },
 		{ OpenXRInput::XR_ARROWS, "arrows", "Open the arrow selector on the right hand" },
 		{ OpenXRInput::XR_LANTERN, "lantern", "Toggle the lantern (vanilla inventory_use Lantern)" },
+		{ OpenXRInput::XR_TURN_Y, "turn_y", "Turning stick up/down (spyglass zoom)" },
 	};
 
 	OpenXRInput::Action ActionByName( const idStr &name ) {
@@ -251,6 +252,7 @@ void OpenXRInput::CreateAllActions() {
 	CreateAction( ingameActionSet, XR_POUCH, XR_ACTION_TYPE_BOOLEAN_INPUT );
 	CreateAction( ingameActionSet, XR_ARROWS, XR_ACTION_TYPE_BOOLEAN_INPUT );
 	CreateAction( ingameActionSet, XR_LANTERN, XR_ACTION_TYPE_BOOLEAN_INPUT );
+	CreateAction( ingameActionSet, XR_TURN_Y, XR_ACTION_TYPE_FLOAT_INPUT );
 
 	menuActionSet = CreateActionSet( "menu" );
 	CreateAction( menuActionSet, XR_MENU_AIM, XR_ACTION_TYPE_POSE_INPUT, 2, handPaths );
@@ -419,6 +421,7 @@ void OpenXRInput::UpdateInput( int axis[6], idList<padActionChange_t> &actionCha
 		poseInput.handTrigger[h] = GetFloat( XR_HAND_TRIGGER, handPaths[h] ).second;
 	}
 	poseInput.buttons = ( GetBool( XR_POUCH ).second ? 1 : 0 ) | ( GetBool( XR_ARROWS ).second ? 2 : 0 );
+	poseInput.turnStickY = GetFloat( XR_TURN_Y ).second;
 
 	auto menuState = GetBool( XR_MENU_OPEN );
 	if ( menuState.first ) {

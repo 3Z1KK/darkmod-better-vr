@@ -249,6 +249,7 @@ public:
 	byte		vrHeadFlags;					// VR_HEAD_*
 	byte		vrButtons;						// VR_BUTTON_*
 	signed char	vrTurnStick;					// the turning stick's left/right (-127..127), also while turning is locked
+	signed char	vrTurnStickY;					// the turning stick's up/down (-127..127, up positive); not used by the vanilla controls
 
 public:
 	void		ByteSwap();						// on big endian systems, byte swap the shorts and ints

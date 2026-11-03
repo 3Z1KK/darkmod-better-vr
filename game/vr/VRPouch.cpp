@@ -19,6 +19,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "game/Game_local.h"
 #include "game/vr/VRPouch.h"
 #include "game/vr/VRHands.h"
+#include "game/vr/VRSpyglass.h"
 #include "game/Inventory/Inventory.h"
 #include "game/Grabber.h"
 #include "game/LodComponent.h"
@@ -340,7 +341,13 @@ bool idVRPouch::Take( idPlayer *player, idVRHand &leftHand ) {
 	}
 
 	idEntity *takeEnt = ent;
-	if ( ( item->IsStackable() && item->GetCount() > 1 ) || ent->spawnArgs.GetBool( "inv_inexhaustible", "0" ) ) {
+	if ( idVRSpyglass::IsVanillaSpyglass( ent ) ) {
+		// the vanilla inventory spyglass comes out as the VR spyglass (stored again, it stays one)
+		takeEnt = idVRSpyglass::SpawnReplacement( ent );
+		if ( takeEnt == nullptr ) {
+			return true;
+		}
+	} else if ( ( item->IsStackable() && item->GetCount() > 1 ) || ent->spawnArgs.GetBool( "inv_inexhaustible", "0" ) ) {
 		// stacks keep one entity for the whole stack: spawn one more for the hand
 		const idDict *entityDef = gameLocal.FindEntityDefDict( ent->GetEntityDefName(), false );
 		if ( entityDef == nullptr || !gameLocal.SpawnEntityDef( *entityDef, &takeEnt ) || takeEnt == nullptr ) {
