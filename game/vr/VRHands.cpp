@@ -17,6 +17,8 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 
 #include "game/Game_local.h"
 #include "game/vr/VRHands.h"
+#include "game/vr/VRConsumables.h"
+#include "game/Inventory/Inventory.h"
 #include "game/Moveable.h"
 #include "game/AFEntity.h"
 #include "game/Item.h"
@@ -685,7 +687,7 @@ void idVRHand::StartInteraction( idPlayer *player ) {
 		idVec3 anchor;
 		idMat3 handAxisInTool;
 		idVRTools::GetSnapGrip( ent, anchor, handAxisInTool );
-		HoldEntity( player, ent, 0, anchor, handAxisInTool, idVec3( 0, 0, 0 ) );
+		HoldEntity( player, ent, 0, anchor, handAxisInTool, idVRTools::GetSnapGripOffset( ent ) );
 		return;
 	}
 
@@ -843,6 +845,14 @@ void idVRHand::Release( idPlayer *player, bool allowInventory ) {
 
 	// is the other hand still holding it? (this hand already let go)
 	const bool otherHolds = player->vrHands.CountHolding( ent ) > 0;
+
+	// food or a potion let go of at the mouth, a flashbomb thrown
+	if ( allowInventory && !otherHolds && ( kind == IK_HOLD || kind == IK_CARRY ) && idVRConsumables::OnRelease( player, ent, input ) ) {
+		carryKinematic = false;
+		carryFromPouch = false;
+		player->vrHands.ReleaseNonSolidToPlayer( ent, false );
+		return;
+	}
 
 	// an arrow let go of at the right shoulder goes back into the quiver (like at the stomach)
 	bool atQuiver = false;
@@ -1178,6 +1188,13 @@ void idVRHand::Update( idPlayer *player, const vrHandInput_t &in, float dt ) {
 		if ( ent && lockUse.Begin( player, ent ) ) {
 			// a key or lockpick held against a lock: used on it like in the normal game
 			HandsDebug( "hand %d uses %s on a lock", index, ent->name.c_str() );
+		} else if ( ent && idVRConsumables::UsedByTrigger( ent ) && player->vrHands.CountHolding( ent ) == 1 ) {
+			// a potion is drunk, a mine set down at the hand: the hand lets go first
+			const idVec3 handPos = input.pos;
+			Release( player, false );
+			idVRConsumables::UseFromHand( player, ent, handPos );
+		} else if ( ent && idVRConsumables::IsFood( ent ) ) {
+			// food is eaten by letting go of it at the mouth, not with the trigger
 		} else if ( ent && ent->spawnArgs.GetString( "equip_action_script", "", script ) ) {
 			HandsDebug( "hand %d uses %s (%s)", index, ent->name.c_str(), script.c_str() );
 			idThread *thread = player->CallScriptFunctionArgs( script.c_str(), true, 0, "e", ent );
@@ -1315,6 +1332,10 @@ void idVRHands::Shutdown() {
 		gameRenderWorld->FreeEntityDef( ringHandle );
 	}
 	ringHandle = -1;
+	if ( compassHandle != -1 && gameRenderWorld ) {
+		gameRenderWorld->FreeEntityDef( compassHandle );
+	}
+	compassHandle = -1;
 	hands[0].Shutdown();
 	hands[1].Shutdown();
 	for ( int i = 0; i < highlighted.Num(); i++ ) {
@@ -1983,6 +2004,57 @@ void idVRHands::PostThink( idPlayer *player ) {
 	readables.UpdatePanels( player, hands );
 	spyglass.UpdateRender( player, hands );
 	UpdateLightCrystal( player );
+	UpdateWristCompass( player );
+}
+
+/*
+ * The compass: the vanilla HUD compass model (scaled down by models/vr/compass/wrist_compass.proxy) lies on the back
+ * of the right wrist while the player has a compass. The whole rose turns to keep its north to the world's north,
+ * like the HUD compass (which turns the model by the view yaw); it tilts with the wrist.
+ */
+idCVar vr_compassBack( "vr_compassBack", "3.2", CVAR_GAME | CVAR_FLOAT, "VR: wrist compass, distance up the forearm from the hand joint (units)" );
+idCVar vr_compassUp( "vr_compassUp", "1.6", CVAR_GAME | CVAR_FLOAT, "VR: wrist compass, height above the back of the wrist (units)" );
+
+void idVRHands::UpdateWristCompass( idPlayer *player ) {
+	const idVRHand &hand = hands[1];
+	if ( !gameRenderWorld ) {
+		return;
+	}
+	const bool owned = player->Inventory() != nullptr && player->Inventory()->GetItem( "#str_02397" ) != nullptr;	// Compass
+	idVec3 jointPos;
+	idMat3 jointAxis;
+	if ( !owned || !IsActive() || !hand.IsTracked() || !hand.GetGlove().GetJointWorld( hand.GetGlove().GetHandJoint(), jointPos, jointAxis ) ) {
+		if ( compassHandle != -1 ) {
+			gameRenderWorld->FreeEntityDef( compassHandle );
+			compassHandle = -1;
+		}
+		return;
+	}
+	idRenderModel *model = renderModelManager->FindModel( "models/vr/compass/wrist_compass.proxy" );
+	if ( model == nullptr || model->IsDefaultModel() ) {
+		return;
+	}
+	// hand joint: x towards the fingers, z out of the back of the hand
+	const idVec3 up = jointAxis[2];
+	idVec3 north = idVec3( 1, 0, 0 ) - up * up.x;		// the model's +x keeps to the world's +x (as on the HUD)
+	if ( north.Normalize() < 0.1f ) {
+		north = jointAxis[0];
+	}
+	const idVec3 left = up.Cross( north );
+	memset( &compassEntity, 0, sizeof( compassEntity ) );
+	compassEntity.hModel = model;
+	compassEntity.origin = jointPos - jointAxis[0] * vr_compassBack.GetFloat() + up * vr_compassUp.GetFloat();
+	compassEntity.axis = idMat3( north, left, up );
+	compassEntity.bounds = model->Bounds();
+	compassEntity.noShadow = true;
+	compassEntity.suppressSurfaceInViewID = VID_LIGHTGEM;
+	compassEntity.shaderParms[SHADERPARM_RED] = compassEntity.shaderParms[SHADERPARM_GREEN] = compassEntity.shaderParms[SHADERPARM_BLUE] = 1.0f;
+	compassEntity.shaderParms[SHADERPARM_ALPHA] = 1.0f;
+	if ( compassHandle == -1 ) {
+		compassHandle = gameRenderWorld->AddEntityDef( &compassEntity );
+	} else {
+		gameRenderWorld->UpdateEntityDef( compassHandle, &compassEntity );
+	}
 }
 
 /*

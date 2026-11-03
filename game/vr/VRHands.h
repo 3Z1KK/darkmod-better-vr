@@ -223,6 +223,7 @@ public:
 private:
 	void			UpdateHighlights();
 	void			UpdateLightCrystal( idPlayer *player );
+	void			UpdateWristCompass( idPlayer *player );
 	void			UpdateCalibration( idPlayer *player );
 	void			DriveHeldObjects( float dt );
 	void			UpdatePendingClipRestores( idPlayer *player );
@@ -250,6 +251,8 @@ private:
 	qhandle_t		crystalHandle = -1;
 	renderEntity_t	ringEntity;
 	qhandle_t		ringHandle = -1;
+	renderEntity_t	compassEntity;
+	qhandle_t		compassHandle = -1;
 	float			crystalLevel = 0.0f;
 
 	struct clipRestore_t {

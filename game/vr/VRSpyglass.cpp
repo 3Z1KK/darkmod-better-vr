@@ -297,7 +297,11 @@ idEntity *idVRSpyglass::SpawnReplacement( const idEntity *ent ) {
 	idDict args;
 	args.Set( "classname", VR_SPYGLASS_DEF );
 	args.SetVector( "origin", origin );
-	args.SetMatrix( "rotation", axis );
+	// full precision: SetMatrix writes 2 decimals, and the spawn code takes a matrix that isn't orthogonal enough
+	// as a request to bake it into the model (proxy model, entity axis reset), which put the picture 90 degrees off
+	idMat3 spawnAxis = axis;
+	spawnAxis.OrthoNormalizeSelf();
+	args.Set( "rotation", spawnAxis.ToString( 8 ) );
 	idEntity *spawned = nullptr;
 	if ( !gameLocal.SpawnEntityDef( args, &spawned ) || spawned == nullptr ) {
 		return nullptr;

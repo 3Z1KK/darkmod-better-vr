@@ -427,22 +427,10 @@ void OpenXRInput::UpdateInput( int axis[6], idList<padActionChange_t> &actionCha
 	if ( menuState.first ) {
 		actionChanges.AddGrow( { UB_NONE, "escape", menuState.second } );
 	}
-	auto inventoryState = GetBool( XR_INVENTORY_OPEN );
-	if ( inventoryState.first ) {
-		actionChanges.AddGrow( { UB_INVENTORY_GRID, "", inventoryState.second } );
-	}
-	auto jumpState = GetBool( XR_JUMP );
-	if ( jumpState.first ) {
-		actionChanges.AddGrow( { UB_UP, "", jumpState.second } );
-	}
-	auto frobState = GetBool( XR_FROB );
-	if ( frobState.first ) {
-		actionChanges.AddGrow( { UB_FROB, "", frobState.second } );
-	}
-	auto crouchState = GetBool( XR_CROUCH );
-	if ( crouchState.first ) {
-		actionChanges.AddGrow( { UB_CROUCH, "", crouchState.second } );
-	}
+	SendButtonLevel( XR_INVENTORY_OPEN, UB_INVENTORY_GRID, actionChanges );
+	SendButtonLevel( XR_JUMP, UB_UP, actionChanges );
+	SendButtonLevel( XR_FROB, UB_FROB, actionChanges );
+	SendButtonLevel( XR_CROUCH, UB_CROUCH, actionChanges );
 	if ( isSprinting && idMath::Fabs( side ) + idMath::Fabs( forward ) <= 0.001 ) {
 		actionChanges.AddGrow( { UB_SPEED, "", false } );
 		isSprinting = false;
@@ -460,25 +448,13 @@ void OpenXRInput::UpdateInput( int axis[6], idList<padActionChange_t> &actionCha
 		fakeAttackPressed = false;
 	}
 
-	auto attackState = GetBool(XR_ATTACK);
-	if ( attackState.first ) {
-		actionChanges.AddGrow( { UB_ATTACK, "", attackState.second } );
-	}
+	SendButtonLevel( XR_ATTACK, UB_ATTACK, actionChanges );
 
-	auto parryState = GetBool( XR_PARRY );
-	if ( parryState.first ) {
-		actionChanges.AddGrow( { UB_PARRY_MANIPULATE, "", parryState.second } );
-	}
+	SendButtonLevel( XR_PARRY, UB_PARRY_MANIPULATE, actionChanges );
 
-	auto useItemState = GetBool( XR_USE_ITEM );
-	if ( useItemState.first ) {
-		actionChanges.AddGrow( { UB_INVENTORY_USE, "", useItemState.second } );
-	}
+	SendButtonLevel( XR_USE_ITEM, UB_INVENTORY_USE, actionChanges );
 
-	auto dropItemState = GetBool( XR_DROP_ITEM );
-	if ( dropItemState.first ) {
-		actionChanges.AddGrow( { UB_INVENTORY_DROP, "", dropItemState.second } );
-	}
+	SendButtonLevel( XR_DROP_ITEM, UB_INVENTORY_DROP, actionChanges );
 
 	// the lantern, the vanilla way (the same command the keyboard binding uses; nothing happens without one)
 	auto lanternState = GetBool( XR_LANTERN );
@@ -489,7 +465,46 @@ void OpenXRInput::UpdateInput( int axis[6], idList<padActionChange_t> &actionCha
 	ClearInputState();
 }
 
+namespace {
+	// game buttons kept by level (see OpenXRInput::sentDown)
+	struct levelButton_t { OpenXRInput::Action action; int button; };
+	const levelButton_t LEVEL_BUTTONS[] = {
+		{ OpenXRInput::XR_INVENTORY_OPEN, UB_INVENTORY_GRID },
+		{ OpenXRInput::XR_JUMP, UB_UP },
+		{ OpenXRInput::XR_FROB, UB_FROB },
+		{ OpenXRInput::XR_CROUCH, UB_CROUCH },
+		{ OpenXRInput::XR_ATTACK, UB_ATTACK },
+		{ OpenXRInput::XR_PARRY, UB_PARRY_MANIPULATE },
+		{ OpenXRInput::XR_USE_ITEM, UB_INVENTORY_USE },
+		{ OpenXRInput::XR_DROP_ITEM, UB_INVENTORY_DROP },
+	};
+}
+
+void OpenXRInput::SendButtonLevel( Action action, int button, idList<padActionChange_t> &actionChanges ) {
+	// The game counts presses and releases. Telling it about changes only (changedSinceLastSync) lost one now and
+	// then (ClearInputState syncs again, and a change in between was swallowed), and a lost release left the button
+	// held for good: jump stopped working, and a panel that zeroes the jump (pouch, arrow selector) made the
+	// player jump when it closed. So the button's actual state is compared with what the game was last told.
+	const bool down = GetBool( action ).second;
+	if ( down != sentDown[action] ) {
+		actionChanges.AddGrow( { button, "", down } );
+		sentDown[action] = down;
+	}
+}
+
+void OpenXRInput::ReleaseHeldButtons( idList<padActionChange_t> &actionChanges ) {
+	for ( const levelButton_t &b : LEVEL_BUTTONS ) {
+		if ( sentDown[b.action] ) {
+			actionChanges.AddGrow( { b.button, "", false } );
+			sentDown[b.action] = false;
+		}
+	}
+}
+
 void OpenXRInput::HandleMenuInput( XrSpace referenceSpace, XrTime time, idList<padActionChange_t> &actionChanges ) {
+	// nothing stays held in the game while a menu has the controllers
+	ReleaseHeldButtons( actionChanges );
+
 	idList<XrActiveActionSet> activeActionSets {
 		{ menuActionSet, XR_NULL_PATH },
 	};

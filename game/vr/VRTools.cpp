@@ -206,6 +206,22 @@ bool idVRTools::IsTool( const idEntity *ent, int *slot ) {
  * models usually have their origin at the hilt; if not, the hand goes near the far end.
  * Overridable per entity with "vr_grip_origin" (grip point, model space) and "vr_grip_angles".
  */
+idCVar vr_pickGripOffset( "vr_pickGripOffset", "1.2 0 -2", CVAR_GAME, "VR: lockpicks are held like a pencil: the pinch between thumb and index finger, in hand space (x towards the thumb, z towards the wrist; units)" );
+
+namespace {
+	bool IsPencilTool( const idEntity *ent ) {
+		return ent->spawnArgs.GetString( "lockpick_type_vr" )[0] != '\0';
+	}
+}
+
+idVec3 idVRTools::GetSnapGripOffset( const idEntity *ent ) {
+	idVec3 offset( 0, 0, 0 );
+	if ( ent != nullptr && IsPencilTool( ent ) ) {
+		sscanf( vr_pickGripOffset.GetString(), "%f %f %f", &offset.x, &offset.y, &offset.z );
+	}
+	return offset;
+}
+
 void idVRTools::GetSnapGrip( idEntity *ent, idVec3 &anchor, idMat3 &handAxis ) {
 	if ( ent->spawnArgs.FindKey( "vr_grip_origin" ) || ent->spawnArgs.FindKey( "vr_grip_angles" ) ) {
 		anchor = ent->spawnArgs.GetVector( "vr_grip_origin", "0 0 0" );
@@ -227,8 +243,12 @@ void idVRTools::GetSnapGrip( idEntity *ent, idVec3 &anchor, idMat3 &handAxis ) {
 	const float hiltEnd = sign > 0 ? b[0][longAxis] : b[1][longAxis];
 	const float length = size[longAxis];
 
+	const bool pencil = IsPencilTool( ent );
 	anchor.Zero();
-	if ( idMath::Fabs( hiltEnd ) > length * 0.3f ) {
+	if ( pencil ) {
+		// a lockpick: pinched a third of the way from its handle end, the tip well out in front of the fingers
+		anchor[longAxis] = hiltEnd + sign * length * 0.3f;
+	} else if ( idMath::Fabs( hiltEnd ) > length * 0.3f ) {
 		// the origin is not near an end: grip a little in from the end opposite the tip
 		anchor[longAxis] = hiltEnd + sign * length * 0.12f;
 	}
@@ -237,7 +257,10 @@ void idVRTools::GetSnapGrip( idEntity *ent, idVec3 &anchor, idMat3 &handAxis ) {
 	L[longAxis] = sign;
 	W[widthAxis] = 1.0f;
 	const idMat3 A( L, W, L.Cross( W ) );				// rows: tool directions (tool space)
-	const idMat3 C( idVec3( 1, 0, 0 ), idVec3( 0, 0, 1 ), idVec3( 0, -1, 0 ) );	// rows: where they go in the hand
+	// rows: where they go in the hand (x = little finger to thumb, z = towards the wrist). A sword or blackjack in the
+	// fist points out past the thumb (like a hammer); a lockpick points forward out of the fingers (like a pencil)
+	const idMat3 C = pencil ? idMat3( idVec3( 0, 0, -1 ), idVec3( 1, 0, 0 ), idVec3( 0, -1, 0 ) )
+		: idMat3( idVec3( 1, 0, 0 ), idVec3( 0, 0, 1 ), idVec3( 0, -1, 0 ) );
 	handAxis = C.Transpose() * A;
 }
 
@@ -295,9 +318,10 @@ bool idVRTools::TryDraw( idPlayer *player, idVRHand &hand, int handIndex, const 
 	idMat3 handAxisInTool;
 	GetSnapGrip( ent, anchor, handAxisInTool );
 	const idMat3 toolAxis = handAxisInTool.Transpose() * hand.GetInput().axis;
+	const idVec3 gripOffset = GetSnapGripOffset( ent );
 	ent->SetAxis( toolAxis );
-	ent->SetOrigin( handPos - anchor * toolAxis );
-	hand.HoldEntity( player, ent, 0, anchor, handAxisInTool, idVec3( 0, 0, 0 ) );
+	ent->SetOrigin( handPos + gripOffset * hand.GetInput().axis - anchor * toolAxis );
+	hand.HoldEntity( player, ent, 0, anchor, handAxisInTool, gripOffset );
 	PlaySound( player, best, true );
 	return true;
 }

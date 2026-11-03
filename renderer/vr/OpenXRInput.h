@@ -105,6 +105,8 @@ private:
 	idVec2 curOverlayIntersect;
 	int activeMenuHand = 0;
 	bool fakeAttackPressed = false;
+	// held game buttons as last told to the game (sent by level, not by change: a change can be lost between syncs)
+	bool sentDown[XR_NUM_ACTIONS] = {};
 
 	XrActionSet CreateActionSet( const idStr &name, uint32_t priority = 0 );
 	void CreateAction( XrActionSet actionSet, Action action, XrActionType actionType, uint32_t numSubPaths = 0, XrPath *subPaths = nullptr );
@@ -120,6 +122,8 @@ private:
 	idVec2 FindGuiOverlayIntersection( XrPosef pointerPose );
 
 	void ClearInputState();
+	void SendButtonLevel( Action action, int button, idList<padActionChange_t> &actionChanges );
+	void ReleaseHeldButtons( idList<padActionChange_t> &actionChanges );
 
 	XrSpace FindActionSpace( Action action, XrPath subPath = XR_NULL_PATH );
 	std::pair<bool, bool> GetBool( Action action, XrPath subPath = XR_NULL_PATH );
