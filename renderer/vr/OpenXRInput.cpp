@@ -59,6 +59,7 @@ namespace {
 		{ OpenXRInput::XR_HAND_TRIGGER, "hand_trigger", "Hand trigger" },
 		{ OpenXRInput::XR_POUCH, "pouch", "Open the pouch (inventory) on the left hand" },
 		{ OpenXRInput::XR_ARROWS, "arrows", "Open the arrow selector on the right hand" },
+		{ OpenXRInput::XR_LANTERN, "lantern", "Toggle the lantern (vanilla inventory_use Lantern)" },
 	};
 
 	OpenXRInput::Action ActionByName( const idStr &name ) {
@@ -249,6 +250,7 @@ void OpenXRInput::CreateAllActions() {
 	CreateAction( ingameActionSet, XR_HAND_TRIGGER, XR_ACTION_TYPE_FLOAT_INPUT, 2, handPaths );
 	CreateAction( ingameActionSet, XR_POUCH, XR_ACTION_TYPE_BOOLEAN_INPUT );
 	CreateAction( ingameActionSet, XR_ARROWS, XR_ACTION_TYPE_BOOLEAN_INPUT );
+	CreateAction( ingameActionSet, XR_LANTERN, XR_ACTION_TYPE_BOOLEAN_INPUT );
 
 	menuActionSet = CreateActionSet( "menu" );
 	CreateAction( menuActionSet, XR_MENU_AIM, XR_ACTION_TYPE_POSE_INPUT, 2, handPaths );
@@ -475,6 +477,12 @@ void OpenXRInput::UpdateInput( int axis[6], idList<padActionChange_t> &actionCha
 		actionChanges.AddGrow( { UB_INVENTORY_DROP, "", dropItemState.second } );
 	}
 
+	// the lantern, the vanilla way (the same command the keyboard binding uses; nothing happens without one)
+	auto lanternState = GetBool( XR_LANTERN );
+	if ( lanternState.first ) {
+		actionChanges.AddGrow( { UB_NONE, lanternState.second ? "inventory_use Lantern" : "", lanternState.second } );
+	}
+
 	ClearInputState();
 }
 
@@ -578,6 +586,7 @@ void OpenXRInput::ClearInputState() {
 	GetBool( XR_INVENTORY_OPEN );
 	GetBool( XR_USE_ITEM );
 	GetBool( XR_DROP_ITEM );
+	GetBool( XR_LANTERN );
 	GetBool( XR_MENU_CLICK );
 	GetBool( XR_MENU_ESCAPE );
 }
