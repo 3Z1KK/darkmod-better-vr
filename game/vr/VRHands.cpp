@@ -43,7 +43,8 @@ idCVar vr_handPushMass( "vr_handPushMass", "2", CVAR_GAME | CVAR_FLOAT, "VR: eff
 idCVar vr_handPushMinSpeed( "vr_handPushMinSpeed", "25", CVAR_GAME | CVAR_FLOAT, "VR: a free hand only knocks things when moving faster than this (units/s)" );
 idCVar vr_handDensity( "vr_handDensity", "0.12", CVAR_GAME | CVAR_FLOAT, "VR: held weight from size: weight = this x (bounding volume in litres)^vr_handDensityExp" );
 idCVar vr_handDensityExp( "vr_handDensityExp", "0.8", CVAR_GAME | CVAR_FLOAT, "VR: see vr_handDensity" );
-idCVar vr_handBodyMass( "vr_handBodyMass", "11", CVAR_GAME | CVAR_FLOAT, "VR: weight of a whole body (dead or unconscious, ragdoll) in the hands, whichever part is held. 11 = two hands can just lift it (vr_handLiftMass 6 each), one hand drags it" );
+idCVar vr_handBodyMass( "vr_handBodyMass", "10", CVAR_GAME | CVAR_FLOAT, "VR: weight of a whole body (dead or unconscious, ragdoll) in the hands, like one object of that weight held at the gripped part; the rest of the body hangs and tips by the normal physics. 10 = two hands can lift it (vr_handLiftMass 6 each), one hand drags it" );
+idCVar vr_handBodyPartMax( "vr_handBodyPartMax", "8", CVAR_GAME | CVAR_FLOAT, "VR: limit on how much a small held body part (hand, foot) is pushed to move the whole body (keeps the ragdoll physics stable)" );
 idCVar vr_handTouchMargin( "vr_handTouchMargin", "0.3", CVAR_GAME | CVAR_FLOAT, "VR: extra distance (units) around the palm and fingers that still counts as touching" );
 idCVar vr_handPushBounce( "vr_handPushBounce", "0.2", CVAR_GAME | CVAR_FLOAT, "VR: bounciness of hand-object bumps" );
 idCVar vr_handFollowTime( "vr_handFollowTime", "0.03", CVAR_GAME | CVAR_FLOAT, "VR: time (s) in which a held object should close its distance to the hand" );
@@ -1742,23 +1743,27 @@ void idVRHands::DriveHeldObjects( float dt ) {
 
 		// holding up
 		const float support = idMath::ClampFloat( 0.0f, 1.0f, vr_handLiftMass.GetFloat() * n / mass );
-		linVel -= gravity * ( dt * support );
+		// A body counts as one object of vr_handBodyMass, held at the gripped part. The hands push only that part,
+		// as hard as they would push the whole body; the joints pass it on to the rest by the game's own physics,
+		// so a body lifted by the legs comes up legs first while the torso drags and tips
+		float partScale = 1.0f;
 		if ( phys->IsType( idPhysics_AF::Type ) ) {
-			// a body: the hands carry all of it, not only the held part (the rest would hang from it with its
-			// full game weight, which made bodies impossible to lift). The same share of gravity is taken off
-			// every part, so it sags and drags where the hands can't hold it all up
-			idPhysics_AF *af = static_cast<idPhysics_AF *>( phys );
-			for ( int b = 0; b < af->GetNumBodies(); b++ ) {
-				if ( b != bodyId ) {
-					af->SetLinearVelocity( af->GetLinearVelocity( b ) - gravity * ( dt * support ), b );
-				}
-			}
+			partScale = idMath::ClampFloat( 1.0f, Max( 1.0f, vr_handBodyPartMax.GetFloat() ), phys->GetMass( -1 ) / Max( 0.01f, phys->GetMass( bodyId ) ) );
 		}
-
 		// moving
 		{
 			idVec3 dVel = ffVel + ( targetCom - com ) / Max( vr_handFollowTime.GetFloat(), dt ) - linVel;
-			const float maxDVel = vr_handMoveForce.GetFloat() * n / mass * dt;
+			float maxDVel = vr_handMoveForce.GetFloat() * n / mass * dt * partScale;
+			if ( partScale > 1.0f || phys->IsType( idPhysics_AF::Type ) ) {
+				// a body: no constant lift (the part would fly up when the rest lies slack on the ground). The hands
+				// cancel gravity only as far as needed to keep the part at them, up to what they can carry of the
+				// whole body; whatever hangs from the part pulls it down through the joints
+				dVel -= gravity * dt;
+				maxDVel += support * partScale * gravity.Length() * dt;
+			} else {
+				linVel -= gravity * ( dt * support );
+				dVel = ffVel + ( targetCom - com ) / Max( vr_handFollowTime.GetFloat(), dt ) - linVel;
+			}
 			if ( dVel.LengthSqr() > maxDVel * maxDVel ) {
 				dVel.Normalize();
 				dVel *= maxDVel;
