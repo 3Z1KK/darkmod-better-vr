@@ -340,6 +340,12 @@ bool idVRPouch::Take( idPlayer *player, idVRHand &leftHand ) {
 		return true;
 	}
 
+	// a lit lantern goes out when it leaves the inventory (its light hangs on the player, not on the lantern)
+	const char *iconOn = ent->spawnArgs.GetString( "inv_icon_on", "" );
+	if ( iconOn[0] != '\0' && item->GetIcon() == iconOn ) {
+		player->UseInventoryItem( EPressed, item, 0, false );
+	}
+
 	idEntity *takeEnt = ent;
 	if ( idVRSpyglass::IsVanillaSpyglass( ent ) ) {
 		// the vanilla inventory spyglass comes out as the VR spyglass (stored again, it stays one)

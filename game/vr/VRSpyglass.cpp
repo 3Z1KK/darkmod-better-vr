@@ -144,7 +144,8 @@ namespace {
 	}
 
 	idEntity *HeldSpyglass( idVRHand &hand ) {
-		if ( hand.GetInteraction() != idVRHand::IK_HOLD ) {
+		// weightless things (the spyglass is one) are carried, heavier ones held
+		if ( hand.GetInteraction() != idVRHand::IK_HOLD && hand.GetInteraction() != idVRHand::IK_CARRY ) {
 			return nullptr;
 		}
 		idEntity *ent = hand.GetHeld();
@@ -318,6 +319,10 @@ void idVRSpyglass::UpdateLens( idPlayer *player, lens_t &lens ) {
 	const idMat3 axis = ent->GetPhysics()->GetAxis();
 	const idVec3 lensPos = origin + idVec3( LENS_X, 0, 0 ) * axis;
 	const bool live = NearPlayer( player, lensPos );
+	if ( live != ent->spawnArgs.GetBool( "vr_lens_live", "0" ) ) {
+		ent->spawnArgs.SetBool( "vr_lens_live", live );
+		SpyglassDebug( "%s: picture %s", ent->name.c_str(), live ? "live" : "off (too far)" );
+	}
 
 	if ( live ) {
 		// the far end's camera looks out along the tube; turning the spyglass about its length turns the picture
@@ -410,6 +415,9 @@ void idVRSpyglass::UpdateRender( idPlayer *player ) {
 				closeToEye = true;
 			}
 		}
+	}
+	if ( closeToEye != eyeAtLens ) {
+		SpyglassDebug( "head %s an eyepiece (%d spyglasses)", closeToEye ? "at" : "away from", lenses.Num() );
 	}
 	eyeAtLens = closeToEye;
 }
