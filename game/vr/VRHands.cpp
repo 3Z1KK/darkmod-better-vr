@@ -43,7 +43,7 @@ idCVar vr_handPushMass( "vr_handPushMass", "2", CVAR_GAME | CVAR_FLOAT, "VR: eff
 idCVar vr_handPushMinSpeed( "vr_handPushMinSpeed", "25", CVAR_GAME | CVAR_FLOAT, "VR: a free hand only knocks things when moving faster than this (units/s)" );
 idCVar vr_handDensity( "vr_handDensity", "0.12", CVAR_GAME | CVAR_FLOAT, "VR: held weight from size: weight = this x (bounding volume in litres)^vr_handDensityExp" );
 idCVar vr_handDensityExp( "vr_handDensityExp", "0.8", CVAR_GAME | CVAR_FLOAT, "VR: see vr_handDensity" );
-idCVar vr_handBodyMass( "vr_handBodyMass", "60", CVAR_GAME | CVAR_FLOAT, "VR: weight of a whole body (ragdoll) in the hands" );
+idCVar vr_handBodyMass( "vr_handBodyMass", "11", CVAR_GAME | CVAR_FLOAT, "VR: weight of a whole body (dead or unconscious, ragdoll) in the hands, whichever part is held. 11 = two hands can just lift it (vr_handLiftMass 6 each), one hand drags it" );
 idCVar vr_handTouchMargin( "vr_handTouchMargin", "0.3", CVAR_GAME | CVAR_FLOAT, "VR: extra distance (units) around the palm and fingers that still counts as touching" );
 idCVar vr_handPushBounce( "vr_handPushBounce", "0.2", CVAR_GAME | CVAR_FLOAT, "VR: bounciness of hand-object bumps" );
 idCVar vr_handFollowTime( "vr_handFollowTime", "0.03", CVAR_GAME | CVAR_FLOAT, "VR: time (s) in which a held object should close its distance to the hand" );
@@ -1518,7 +1518,7 @@ void idVRHands::TakeOver( idPlayer *player, int handIndex, idEntity *ent ) {
 /*
  * How heavy something feels in the hand. The game's own "mass" values are not reliable for this
  * (a gold bracelet can weigh more than a chair), so the weight is estimated from the object's size:
- * coins and bottles are light, chairs are a handful, big crates are heavy. Bodies are always heavy.
+ * coins and bottles are light, chairs are a handful, big crates are heavy. Dead or unconscious bodies weigh vr_handBodyMass as a whole.
  */
 float VR_EffectiveMass( idEntity *ent, int bodyId ) {
 	if ( ent->spawnArgs.GetBool( "vr_weightless", "0" ) ) {
@@ -1526,8 +1526,8 @@ float VR_EffectiveMass( idEntity *ent, int bodyId ) {
 	}
 	idPhysics *phys = ent->GetPhysics();
 	if ( phys->IsType( idPhysics_AF::Type ) ) {
-		const float total = Max( 0.01f, phys->GetMass( -1 ) );
-		return vr_handBodyMass.GetFloat() * phys->GetMass( bodyId ) / total;
+		// the whole body hangs on the held part (see DriveHeldObjects), so it weighs as a whole
+		return vr_handBodyMass.GetFloat();
 	}
 	const idBounds &b = phys->GetBounds( bodyId );
 	const idVec3 size = b[1] - b[0];
@@ -1743,6 +1743,17 @@ void idVRHands::DriveHeldObjects( float dt ) {
 		// holding up
 		const float support = idMath::ClampFloat( 0.0f, 1.0f, vr_handLiftMass.GetFloat() * n / mass );
 		linVel -= gravity * ( dt * support );
+		if ( phys->IsType( idPhysics_AF::Type ) ) {
+			// a body: the hands carry all of it, not only the held part (the rest would hang from it with its
+			// full game weight, which made bodies impossible to lift). The same share of gravity is taken off
+			// every part, so it sags and drags where the hands can't hold it all up
+			idPhysics_AF *af = static_cast<idPhysics_AF *>( phys );
+			for ( int b = 0; b < af->GetNumBodies(); b++ ) {
+				if ( b != bodyId ) {
+					af->SetLinearVelocity( af->GetLinearVelocity( b ) - gravity * ( dt * support ), b );
+				}
+			}
+		}
 
 		// moving
 		{
