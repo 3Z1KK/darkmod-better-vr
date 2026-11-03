@@ -83,6 +83,21 @@ vr/hands/glove
 }
 
 // the closed cuff opening of the gloves
+// the closed end of the forearm cuff (tools/vr_hands/cap_cuffs.py)
+vr/hands/cuff_end
+{
+	noShadows
+	noSelfShadow
+	twoSided
+	{
+		blend	diffusemap
+		map		_white
+		red		0.06
+		green	0.04
+		blue	0.03
+	}
+}
+
 vr/hands/glove_inner
 {
 	noShadows

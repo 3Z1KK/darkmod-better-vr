@@ -857,7 +857,7 @@ void idVRHand::Release( idPlayer *player, bool allowInventory ) {
 	const bool otherHolds = player->vrHands.CountHolding( ent ) > 0;
 
 	// food or a potion let go of at the mouth, a flashbomb thrown
-	if ( allowInventory && !otherHolds && ( kind == IK_HOLD || kind == IK_CARRY ) && idVRConsumables::OnRelease( player, ent, input ) ) {
+	if ( allowInventory && !otherHolds && ( kind == IK_HOLD || kind == IK_CARRY ) && idVRConsumables::OnRelease( player, ent, input, triggerDown ) ) {
 		carryKinematic = false;
 		carryFromPouch = false;
 		player->vrHands.ReleaseNonSolidToPlayer( ent, false );
@@ -873,7 +873,9 @@ void idVRHand::Release( idPlayer *player, bool allowInventory ) {
 		}
 	}
 
-	if ( allowInventory && ( stomachRelease || atQuiver ) && IsInventoryItem( ent ) && !otherHolds ) {
+	// (arrows by letting go; anything else only with the trigger held, as when brought there)
+	const bool storeHere = atQuiver || ( stomachRelease && ( idVRBow::IsArrow( ent ) || triggerDown ) );
+	if ( allowInventory && storeHere && IsInventoryItem( ent ) && !otherHolds ) {
 		HandsDebug( "hand %d stores %s%s", index, ent->name.c_str(), atQuiver ? " (quiver)" : "" );
 		player->vrHands.ReleaseNonSolidToPlayer( ent, true );
 		player->m_FrobEntity = ent;
@@ -1198,13 +1200,13 @@ void idVRHand::Update( idPlayer *player, const vrHandInput_t &in, float dt ) {
 		if ( ent && lockUse.Begin( player, ent ) ) {
 			// a key or lockpick held against a lock: used on it like in the normal game
 			HandsDebug( "hand %d uses %s on a lock", index, ent->name.c_str() );
-		} else if ( ent && idVRConsumables::UsedByTrigger( ent ) && player->vrHands.CountHolding( ent ) == 1 ) {
-			// a potion is drunk, a mine set down at the hand: the hand lets go first
+		} else if ( ent && idVRConsumables::UsedByTrigger( ent ) && !stomachRelease && player->vrHands.CountHolding( ent ) == 1 ) {
+			// a mine is set down at the hand (at the stomach the trigger stores it instead): the hand lets go first
 			const idVec3 handPos = input.pos;
 			Release( player, false );
 			idVRConsumables::UseFromHand( player, ent, handPos );
-		} else if ( ent && idVRConsumables::IsFood( ent ) ) {
-			// food is eaten by letting go of it at the mouth, not with the trigger
+		} else if ( ent && ( idVRConsumables::IsFood( ent ) || idVRConsumables::IsPotion( ent ) ) ) {
+			// food and potions: the trigger only makes them edible at the mouth (see below)
 		} else if ( ent && ent->spawnArgs.GetString( "equip_action_script", "", script ) ) {
 			HandsDebug( "hand %d uses %s (%s)", index, ent->name.c_str(), script.c_str() );
 			idThread *thread = player->CallScriptFunctionArgs( script.c_str(), true, 0, "e", ent );
@@ -1214,12 +1216,13 @@ void idVRHand::Update( idPlayer *player, const vrHandInput_t &in, float dt ) {
 		}
 	}
 
-	// a held item brought to the stomach is stored, food or a potion brought to the mouth is eaten or drunk: no need
-	// to let go there (only once it has been outside the zone, so taking something out right there doesn't put it back)
+	// with the trigger held, a held item reaching the stomach is stored, food or a potion reaching the mouth eaten or
+	// drunk (grip alone carries things past safely). Only once it has been outside the zone since it was taken, so
+	// taking something out right there doesn't put it back. Arrows are stored by letting go, as before
 	if ( ( interaction == IK_HOLD || interaction == IK_CARRY ) && held.GetEntity() != nullptr ) {
 		idEntity *ent = held.GetEntity();
-		const bool storable = stomachRelease && IsInventoryItem( ent ) && !idVRTools::IsTool( ent );
-		const bool edible = ( idVRConsumables::IsFood( ent ) || idVRConsumables::IsPotion( ent ) ) && idVRConsumables::AtMouth( player, input.pos );
+		const bool storable = triggerDown && stomachRelease && IsInventoryItem( ent ) && !idVRTools::IsTool( ent ) && !idVRBow::IsArrow( ent ) && !IsArrowPickup( ent );
+		const bool edible = triggerDown && ( idVRConsumables::IsFood( ent ) || idVRConsumables::IsPotion( ent ) ) && idVRConsumables::AtMouth( player, input.pos );
 		const bool inZone = storable || edible;
 		if ( inZone && zoneArmed && player->vrHands.CountHolding( ent ) == 1 ) {
 			zoneArmed = false;

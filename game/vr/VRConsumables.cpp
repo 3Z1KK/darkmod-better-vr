@@ -141,7 +141,7 @@ bool idVRConsumables::LaunchProjectile( idPlayer *player, idEntity *ent, const i
 	return true;
 }
 
-bool idVRConsumables::OnRelease( idPlayer *player, idEntity *ent, const vrHandInput_t &input ) {
+bool idVRConsumables::OnRelease( idPlayer *player, idEntity *ent, const vrHandInput_t &input, bool atMouthAllowed ) {
 	if ( ent == nullptr ) {
 		return false;
 	}
@@ -152,7 +152,7 @@ bool idVRConsumables::OnRelease( idPlayer *player, idEntity *ent, const vrHandIn
 		}
 		return false;
 	}
-	if ( !AtMouth( player, input.pos ) ) {
+	if ( !atMouthAllowed || !AtMouth( player, input.pos ) ) {
 		return false;
 	}
 	if ( IsPotion( ent ) ) {
@@ -170,9 +170,6 @@ bool idVRConsumables::OnRelease( idPlayer *player, idEntity *ent, const vrHandIn
 bool idVRConsumables::UseFromHand( idPlayer *player, idEntity *ent, const idVec3 &handPos ) {
 	if ( ent == nullptr ) {
 		return false;
-	}
-	if ( IsPotion( ent ) ) {
-		return Drink( player, ent );
 	}
 	if ( IsMine( ent ) ) {
 		// set down where the hand is: straight down, it arms on its own once it lies
