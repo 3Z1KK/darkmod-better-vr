@@ -12811,7 +12811,7 @@ bool idPlayer::CanGreet() // grayman #3338
 
 void idPlayer::Event_IsLeaning() // grayman #4882
 {
-	idThread::ReturnInt(physicsObj.IsLeaning());
+	idThread::ReturnInt(physicsObj.IsLeaning() || physicsObj.IsVRDoorListening());	// VR: the head against a door counts as leaning
 }
 
 void idPlayer::Event_IsPeekLeaning() // Obsttorte

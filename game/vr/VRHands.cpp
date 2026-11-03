@@ -634,6 +634,7 @@ void idVRHand::HoldEntity( idPlayer *player, idEntity *ent, int bodyId, const id
 	held = ent;
 	heldBodyId = bodyId;
 	gripDown = true;
+	zoneArmed = false;
 	slipTime = 0;
 	carryFromPouch = false;
 	carryKinematic = false;
@@ -672,6 +673,7 @@ void idVRHand::HoldEntity( idPlayer *player, idEntity *ent, int bodyId, const id
 }
 
 void idVRHand::StartInteraction( idPlayer *player ) {
+	zoneArmed = false;
 	idEntity *ent = touched.GetEntity();
 	if ( ent == nullptr ) {
 		return;
@@ -682,8 +684,8 @@ void idVRHand::StartInteraction( idPlayer *player ) {
 		return;
 	}
 
-	if ( idVRTools::IsTool( ent ) && CanHold( ent ) ) {
-		// a dropped tool: back into its fixed grip
+	if ( ( idVRTools::IsTool( ent ) || idVRTools::IsPencilGrip( ent ) ) && CanHold( ent ) ) {
+		// a dropped tool, a key: into its fixed grip
 		idVec3 anchor;
 		idMat3 handAxisInTool;
 		idVRTools::GetSnapGrip( ent, anchor, handAxisInTool );
@@ -752,6 +754,14 @@ void idVRHand::StartInteraction( idPlayer *player ) {
 		carryHomeAxis = ent->GetPhysics()->GetAxis();
 		carryRelOrigin = ( carryHomeOrigin - input.pos ) * ctrlAxisT;
 		carryRelAxis = carryHomeAxis * ctrlAxisT;
+		if ( idVRTools::IsPencilGrip( ent ) ) {
+			// a key: always in the same pencil grip
+			idVec3 anchor;
+			idMat3 handAxisInBody;
+			idVRTools::GetSnapGrip( ent, anchor, handAxisInBody );
+			carryRelAxis = handAxisInBody.Transpose();
+			carryRelOrigin = idVRTools::GetSnapGripOffset( ent ) - anchor * carryRelAxis;
+		}
 		player->vrHands.MakeNonSolidToPlayer( ent );
 		HandsDebug( "hand %d carries %s", index, ent->name.c_str() );
 		return;
@@ -1204,6 +1214,22 @@ void idVRHand::Update( idPlayer *player, const vrHandInput_t &in, float dt ) {
 		}
 	}
 
+	// a held item brought to the stomach is stored, food or a potion brought to the mouth is eaten or drunk: no need
+	// to let go there (only once it has been outside the zone, so taking something out right there doesn't put it back)
+	if ( ( interaction == IK_HOLD || interaction == IK_CARRY ) && held.GetEntity() != nullptr ) {
+		idEntity *ent = held.GetEntity();
+		const bool storable = stomachRelease && IsInventoryItem( ent ) && !idVRTools::IsTool( ent );
+		const bool edible = ( idVRConsumables::IsFood( ent ) || idVRConsumables::IsPotion( ent ) ) && idVRConsumables::AtMouth( player, input.pos );
+		const bool inZone = storable || edible;
+		if ( inZone && zoneArmed && player->vrHands.CountHolding( ent ) == 1 ) {
+			zoneArmed = false;
+			HandsDebug( "hand %d brings %s to the %s", index, ent->name.c_str(), edible ? "mouth" : "stomach" );
+			Release( player, true );
+		} else if ( !inZone ) {
+			zoneArmed = true;
+		}
+	}
+
 	// a held door handle (or lid, drawer): the trigger presses it down, which opens the latch while held
 	if ( interaction == IK_MOVER ) {
 		CBinaryFrobMover *mover = static_cast<CBinaryFrobMover *>( held.GetEntity() );
@@ -1336,6 +1362,10 @@ void idVRHands::Shutdown() {
 		gameRenderWorld->FreeEntityDef( compassHandle );
 	}
 	compassHandle = -1;
+	if ( watchHandle != -1 && gameRenderWorld ) {
+		gameRenderWorld->FreeEntityDef( watchHandle );
+	}
+	watchHandle = -1;
 	hands[0].Shutdown();
 	hands[1].Shutdown();
 	for ( int i = 0; i < highlighted.Num(); i++ ) {
@@ -2012,9 +2042,95 @@ void idVRHands::PostThink( idPlayer *player ) {
  * of the right wrist while the player has a compass. The whole rose turns to keep its north to the world's north,
  * like the HUD compass (which turns the model by the view yaw); it tilts with the wrist.
  */
-idCVar vr_compassBack( "vr_compassBack", "3.2", CVAR_GAME | CVAR_FLOAT, "VR: wrist compass, distance up the forearm from the hand joint (units)" );
-idCVar vr_compassUp( "vr_compassUp", "1.6", CVAR_GAME | CVAR_FLOAT, "VR: wrist compass, height above the back of the wrist (units)" );
+idCVar vr_compassOffset( "vr_compassOffset", "-3.4 -0.7 2.3", CVAR_GAME, "VR: wrist compass position from the right hand joint: x towards the fingers (negative = up the forearm), y towards the thumb, z out of the back of the hand (units, 1 unit = 2.3 cm)" );
+idCVar vr_compassTilt( "vr_compassTilt", "15", CVAR_GAME | CVAR_FLOAT, "VR: wrist compass, turned about the forearm towards the little finger side (degrees), to sit on top of the wrist like a watch" );
+idCVar vr_watchStrapRadius( "vr_watchStrapRadius", "2.2", CVAR_GAME | CVAR_FLOAT, "VR: radius of the wrist compass strap around the wrist (units)" );
 
+namespace {
+	// a surface from vertex and index lists (twoSided materials: the winding doesn't matter)
+	void AddListSurface( idRenderModel *model, int id, const char *material, const idList<idVec3> &pos, const idList<int> &idx ) {
+		modelSurface_t surf;
+		surf.id = id;
+		surf.material = declManager->FindMaterial( material );
+		surf.geometry = model->AllocSurfaceTriangles( pos.Num(), idx.Num() );
+		srfTriangles_t *tri = surf.geometry;
+		tri->numVerts = pos.Num();
+		tri->numIndexes = idx.Num();
+		tri->bounds.Clear();
+		for ( int i = 0; i < pos.Num(); i++ ) {
+			idDrawVert &dv = tri->verts[i];
+			dv.Clear();
+			dv.xyz = pos[i];
+			dv.st.Set( 0.5f, 0.5f );
+			dv.color[0] = dv.color[1] = dv.color[2] = dv.color[3] = 255;
+			tri->bounds.AddPoint( pos[i] );
+		}
+		for ( int i = 0; i < idx.Num(); i++ ) {
+			tri->indexes[i] = idx[i];
+		}
+		tri->tangentsCalculated = false;
+		tri->facePlanesCalculated = false;
+		tri->generateNormals = true;
+		R_DeriveTangents( tri );
+		model->AddSurface( surf );
+	}
+
+	// ring of quads between two circles (points from a function of the angle)
+	template<typename F> void AddStrip( idList<idVec3> &pos, idList<int> &idx, int segments, F point ) {
+		const int base = pos.Num();
+		for ( int s = 0; s <= segments; s++ ) {
+			const float a = idMath::TWO_PI * s / segments;
+			pos.Append( point( a, 0 ) );
+			pos.Append( point( a, 1 ) );
+		}
+		for ( int s = 0; s < segments; s++ ) {
+			const int a0 = base + 2 * s, a1 = a0 + 1, b0 = a0 + 2, b1 = a0 + 3;
+			idx.Append( a0 ); idx.Append( b0 ); idx.Append( a1 );
+			idx.Append( a1 ); idx.Append( b0 ); idx.Append( b1 );
+		}
+	}
+
+	// the watch case around the compass (z = up out of the dial) and its strap around the wrist (along x)
+	idRenderModel *watchModel = nullptr;
+	float watchModelStrap = 0.0f;
+	idRenderModel *GetWatchModel( float strapRadius ) {
+		if ( watchModel != nullptr && watchModelStrap == strapRadius ) {
+			return watchModel;
+		}
+		const int N = 32;
+		const float rCase = 1.36f, rLip = 1.18f, zTop = 0.38f, zBottom = -0.28f;
+		idRenderModel *model = renderModelManager->AllocModel();
+		model->InitEmpty( "_vr_watch" );
+		{
+			idList<idVec3> pos;
+			idList<int> idx;
+			// outer wall, top lip (a rim over the dial's edge), back
+			AddStrip( pos, idx, N, [&]( float a, int k ) { return idVec3( idMath::Cos( a ) * rCase, idMath::Sin( a ) * rCase, k ? zTop : zBottom ); } );
+			AddStrip( pos, idx, N, [&]( float a, int k ) { const float r = k ? rLip : rCase; return idVec3( idMath::Cos( a ) * r, idMath::Sin( a ) * r, zTop ); } );
+			AddStrip( pos, idx, N, [&]( float a, int k ) { const float r = k ? 0.0f : rCase; return idVec3( idMath::Cos( a ) * r, idMath::Sin( a ) * r, zBottom ); } );
+			AddListSurface( model, 0, "vr/watch_case", pos, idx );
+		}
+		{
+			idList<idVec3> pos;
+			idList<int> idx;
+			// the strap: a band around the wrist under the case
+			const float halfWidth = 0.7f;
+			const float cz = zBottom - strapRadius;
+			AddStrip( pos, idx, 40, [&]( float a, int k ) { return idVec3( k ? halfWidth : -halfWidth, idMath::Sin( a ) * strapRadius, cz + idMath::Cos( a ) * strapRadius ); } );
+			AddListSurface( model, 1, "vr/watch_strap", pos, idx );
+		}
+		watchModel = model;
+		watchModelStrap = strapRadius;
+		return model;
+	}
+}
+
+/*
+ * The compass on the right wrist, worn like a watch: the vanilla HUD compass model (scaled down by
+ * models/vr/compass/wrist_compass.proxy) in a brass case on a leather strap, while the player has a compass. The rose
+ * keeps its north to the world's north like the HUD compass (which turns the model by the view yaw); the case sits
+ * on the wrist.
+ */
 void idVRHands::UpdateWristCompass( idPlayer *player ) {
 	const idVRHand &hand = hands[1];
 	if ( !gameRenderWorld ) {
@@ -2023,19 +2139,47 @@ void idVRHands::UpdateWristCompass( idPlayer *player ) {
 	const bool owned = player->Inventory() != nullptr && player->Inventory()->GetItem( "#str_02397" ) != nullptr;	// Compass
 	idVec3 jointPos;
 	idMat3 jointAxis;
-	if ( !owned || !IsActive() || !hand.IsTracked() || !hand.GetGlove().GetJointWorld( hand.GetGlove().GetHandJoint(), jointPos, jointAxis ) ) {
+	idRenderModel *model = renderModelManager->FindModel( "models/vr/compass/wrist_compass.proxy" );
+	if ( !owned || !IsActive() || !hand.IsTracked() || model == nullptr || model->IsDefaultModel()
+		|| !hand.GetGlove().GetJointWorld( hand.GetGlove().GetHandJoint(), jointPos, jointAxis ) ) {
 		if ( compassHandle != -1 ) {
 			gameRenderWorld->FreeEntityDef( compassHandle );
 			compassHandle = -1;
 		}
+		if ( watchHandle != -1 ) {
+			gameRenderWorld->FreeEntityDef( watchHandle );
+			watchHandle = -1;
+		}
 		return;
 	}
-	idRenderModel *model = renderModelManager->FindModel( "models/vr/compass/wrist_compass.proxy" );
-	if ( model == nullptr || model->IsDefaultModel() ) {
-		return;
+	// hand joint: x towards the fingers, y towards the thumb, z out of the back of the hand. The watch sits up the
+	// forearm, turned a little about it towards the little finger side
+	idVec3 offset( 0, 0, 0 );
+	sscanf( vr_compassOffset.GetString(), "%f %f %f", &offset.x, &offset.y, &offset.z );
+	float st, ct;
+	idMath::SinCos( DEG2RAD( vr_compassTilt.GetFloat() ), st, ct );
+	const idMat3 wristAxis( jointAxis[0], jointAxis[1] * ct + jointAxis[2] * st, jointAxis[2] * ct - jointAxis[1] * st );
+	const idVec3 pos = jointPos + jointAxis[0] * offset.x + wristAxis[1] * offset.y + wristAxis[2] * offset.z;
+	const idVec3 up = wristAxis[2];
+
+	// the case and strap
+	idRenderModel *watch = GetWatchModel( vr_watchStrapRadius.GetFloat() );
+	memset( &watchEntity, 0, sizeof( watchEntity ) );
+	watchEntity.hModel = watch;
+	watchEntity.origin = pos;
+	watchEntity.axis = wristAxis;
+	watchEntity.bounds = watch->Bounds();
+	watchEntity.noShadow = true;
+	watchEntity.suppressSurfaceInViewID = VID_LIGHTGEM;
+	watchEntity.shaderParms[SHADERPARM_RED] = watchEntity.shaderParms[SHADERPARM_GREEN] = watchEntity.shaderParms[SHADERPARM_BLUE] = 1.0f;
+	watchEntity.shaderParms[SHADERPARM_ALPHA] = 1.0f;
+	if ( watchHandle == -1 ) {
+		watchHandle = gameRenderWorld->AddEntityDef( &watchEntity );
+	} else {
+		gameRenderWorld->UpdateEntityDef( watchHandle, &watchEntity );
 	}
-	// hand joint: x towards the fingers, z out of the back of the hand
-	const idVec3 up = jointAxis[2];
+
+	// the rose
 	idVec3 north = idVec3( 1, 0, 0 ) - up * up.x;		// the model's +x keeps to the world's +x (as on the HUD)
 	if ( north.Normalize() < 0.1f ) {
 		north = jointAxis[0];
@@ -2043,7 +2187,7 @@ void idVRHands::UpdateWristCompass( idPlayer *player ) {
 	const idVec3 left = up.Cross( north );
 	memset( &compassEntity, 0, sizeof( compassEntity ) );
 	compassEntity.hModel = model;
-	compassEntity.origin = jointPos - jointAxis[0] * vr_compassBack.GetFloat() + up * vr_compassUp.GetFloat();
+	compassEntity.origin = pos;
 	compassEntity.axis = idMat3( north, left, up );
 	compassEntity.bounds = model->Bounds();
 	compassEntity.noShadow = true;

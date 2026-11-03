@@ -58,6 +58,8 @@ public:
 	static void		GetSnapGrip( idEntity *ent, idVec3 &anchor, idMat3 &handAxis );
 	// where in the hand the grip point sits (lockpicks between thumb and index finger; others in the fist)
 	static idVec3	GetSnapGripOffset( const idEntity *ent );
+	// lockpicks and keys: held like a pencil, always in the same grip however they are picked up
+	static bool		IsPencilGrip( const idEntity *ent );
 
 	// for the calibration / debugging: where a holster is in the world
 	bool			GetHolsterPos( idPlayer *player, int slot, const idVRHand &otherHand, idVec3 &pos ) const;

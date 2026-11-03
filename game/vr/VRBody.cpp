@@ -182,6 +182,13 @@ void idVRBody::Update( idPlayer *player, renderView_t *view ) {
 		}
 	}
 
+	// the real head against a closed door listens through it (as leaning against it does)
+	{
+		const idVec3 headWorld = LocalToWorld( view, headLocal );
+		const idMat3 headAxis = cmd.vrHeadAxis.ToMat3() * view->viewaxis;
+		phys->VRDoorListen( !player->AI_DEAD && !player->noclip && !player->spectating, headWorld, headAxis[0] );
+	}
+
 	// is the real head inside a wall?
 	bool headBlocked = false;
 	if ( vr_headInWallFade.GetBool() && !player->noclip && !player->spectating ) {

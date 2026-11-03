@@ -210,8 +210,13 @@ idCVar vr_pickGripOffset( "vr_pickGripOffset", "1.2 0 -2", CVAR_GAME, "VR: lockp
 
 namespace {
 	bool IsPencilTool( const idEntity *ent ) {
-		return ent->spawnArgs.GetString( "lockpick_type_vr" )[0] != '\0';
+		return ent->spawnArgs.GetString( "lockpick_type_vr" )[0] != '\0'
+			|| idStr::Icmp( ent->spawnArgs.GetString( "inv_category" ), "#str_02392" ) == 0;		// Keys
 	}
+}
+
+bool idVRTools::IsPencilGrip( const idEntity *ent ) {
+	return ent != nullptr && IsPencilTool( ent );
 }
 
 idVec3 idVRTools::GetSnapGripOffset( const idEntity *ent ) {

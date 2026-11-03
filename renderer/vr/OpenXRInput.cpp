@@ -23,7 +23,7 @@
 
 idCVar vr_useMotionControllers( "vr_useMotionControllers", "1", CVAR_GAME|CVAR_BOOL|CVAR_ARCHIVE, "If enabled, use motion controllers for game input (wip)" );
 idCVar vr_inputLefthanded( "vr_inputLefthanded", "0", CVAR_BOOL|CVAR_ARCHIVE|CVAR_GAME, "If enabled, assumes the dominant hand to be the left hand" );
-idCVar vr_inputWalkHeadRelative( "vr_inputWalkHeadRelative", "0", CVAR_GAME|CVAR_BOOL|CVAR_RENDERER, "If enabled, movement is relative to head orientation. Otherwise, it is relative to controller orientation." );
+idCVar vr_inputWalkHeadRelative( "vr_inputWalkHeadRelative", "1", CVAR_GAME|CVAR_BOOL|CVAR_RENDERER, "If enabled, movement is relative to head orientation. Otherwise, it is relative to controller orientation." );
 idCVar vr_inputSnapTurnInterval( "vr_snapTurnAngle", "0", CVAR_GAME|CVAR_INTEGER|CVAR_ARCHIVE, "Degrees per snap turn. 0 = smooth turning (default)" );
 idCVar vr_smoothTurnSpeed( "vr_smoothTurnSpeed", "120", CVAR_GAME|CVAR_FLOAT|CVAR_ARCHIVE, "Smooth turning speed in degrees per second at full stick deflection" );
 

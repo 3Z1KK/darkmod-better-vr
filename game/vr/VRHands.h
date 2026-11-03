@@ -126,6 +126,7 @@ public:
 	void			GetGripWorld( idVec3 &point, idMat3 &handAxis ) const;
 
 	bool			stomachRelease;		// set by idVRHands before Release(): hand is in the stomach zone
+	bool			zoneArmed = false;	// the held item has been outside the stomach/mouth zones since it was taken
 
 private:
 	idEntity *		FindTouchedEntity( idPlayer *player, int &bodyId ) const;
@@ -253,6 +254,8 @@ private:
 	qhandle_t		ringHandle = -1;
 	renderEntity_t	compassEntity;
 	qhandle_t		compassHandle = -1;
+	renderEntity_t	watchEntity;
+	qhandle_t		watchHandle = -1;
 	float			crystalLevel = 0.0f;
 
 	struct clipRestore_t {

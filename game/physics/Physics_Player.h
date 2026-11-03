@@ -157,6 +157,9 @@ public:
 	bool					VRTryMantle( const idVec3 &forward );
 	// standing on the ground (as of the last move)
 	bool					VROnGround() const { return groundPlane; }
+	// VR: the real head against a closed door listens through it, as leaning against it does (no lean button)
+	void					VRDoorListen( bool active, const idVec3 &head, const idVec3 &forward );
+	bool					IsVRDoorListening() const { return m_vrDoorListen; }
 
 	/**
 	* Returns the reference entity velocity.  Nonzero only when the
@@ -536,6 +539,7 @@ protected:
 	// VR hand climbing (not saved: hands start empty after loading)
 	bool m_vrClimbing;
 	bool m_vrHandsOnlyClimb;
+	bool m_vrDoorListen;
 
 	/**
 	 * greebo: Set to TRUE if the next mantling can start. Set to FALSE at the 

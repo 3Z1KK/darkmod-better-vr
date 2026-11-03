@@ -87,6 +87,8 @@ vr/hands/glove_inner
 {
 	noShadows
 	noSelfShadow
+	// the caps over the glove's and cuff's openings: seen from both sides, so the cuffs look closed from any angle
+	twoSided
 	{
 		blend	diffusemap
 		map		_white
@@ -111,5 +113,41 @@ guis/assets/vr/pouch_bg
 		map		guis/assets/vr/pouch_bg
 		colored
 		clamp
+	}
+}
+
+// VR wrist compass: the watch case (brass) and strap (leather), see idVRHands::UpdateWristCompass
+vr/watch_case
+{
+	noShadows
+	noSelfShadow
+	twoSided
+	{
+		blend	diffusemap
+		map		_white
+		red		0.42
+		green	0.30
+		blue	0.11
+	}
+	{
+		blend	specularmap
+		map		_white
+		red		0.85
+		green	0.70
+		blue	0.40
+	}
+}
+
+vr/watch_strap
+{
+	noShadows
+	noSelfShadow
+	twoSided
+	{
+		blend	diffusemap
+		map		_white
+		red		0.13
+		green	0.08
+		blue	0.05
 	}
 }

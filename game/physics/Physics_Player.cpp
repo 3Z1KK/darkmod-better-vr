@@ -3064,6 +3064,7 @@ idPhysics_Player::idPhysics_Player
 idPhysics_Player::idPhysics_Player( void ) 
 	: m_vrClimbing(false)
 	, m_vrHandsOnlyClimb(false)
+	, m_vrDoorListen(false)
 	, m_eShoulderAnimState(eShoulderingAnimation_NotStarted)
 	, m_fShoulderingTime(0.0f)
     , m_bShouldering_SkipDucking(false)
@@ -6074,6 +6075,58 @@ void idPhysics_Player::UpdateLean( void ) // grayman #4882 - expanded to handle 
 			player->SetListenLoc(vec3_zero);
 		}
 	}
+}
+
+idCVar vr_doorListenReach( "vr_doorListenReach", "3", CVAR_GAME | CVAR_FLOAT, "VR: the real head this close to a closed door (units in front of the eyes, 1 unit = 2.3 cm) listens through it, like leaning against it" );
+
+void idPhysics_Player::VRDoorListen( bool active, const idVec3 &head, const idVec3 &forward )
+{
+	idPlayer* player = static_cast<idPlayer*>(self);
+	auto stop = [&]() {
+		if ( m_vrDoorListen ) {
+			m_vrDoorListen = false;
+			m_LeanEnt = NULL;
+			player->SetListenLoc( vec3_zero );
+		}
+	};
+	// a real lean (lean buttons) handles doors itself
+	if ( !active || IsLeaning() ) {
+		stop();
+		return;
+	}
+	idVec3 dir = forward;
+	if ( dir.Normalize() < 0.5f ) {
+		stop();
+		return;
+	}
+	// the head (a small box) close to a closed door?
+	trace_t tr;
+	const idBounds headBounds( idVec3( -1, -1, -1 ), idVec3( 1, 1, 1 ) );
+	gameLocal.clip.TraceBounds( tr, head - dir, head + dir * vr_doorListenReach.GetFloat(), headBounds, MASK_PLAYERSOLID, self );
+	idEntity *hit = tr.fraction < 1.0f ? gameLocal.GetTraceEntity( tr ) : NULL;
+	if ( hit == NULL || !hit->IsType( CFrobDoor::Type ) || static_cast<CFrobDoor*>( hit )->IsOpen() ) {
+		stop();
+		return;
+	}
+	// the listening spot: the first empty point behind the door, along the way the head looks (as FindLeanListenPos)
+	const int maxCount = cv_pm_lean_door_increments.GetInteger();
+	idVec3 test = tr.c.point;
+	for ( int count = 1; count < maxCount; count++ ) {
+		test += dir * ( (float)count / (float)maxCount ) * cv_pm_lean_door_max.GetFloat();
+		const int contents = gameLocal.clip.Contents( test, NULL, mat3_identity, CONTENTS_SOLID, self );
+		if ( !( contents & MASK_SOLID ) ) {
+			if ( !m_vrDoorListen || m_LeanEnt.GetEntity() != hit ) {
+				DM_LOG(LC_MOVEMENT,LT_DEBUG)LOGSTRING("VR: head against door %s, listening at %s\r", hit->name.c_str(), test.ToString() );
+			}
+			m_vrDoorListen = true;
+			m_LeanEnt = hit;
+			m_LeanListenPos = test;
+			player->SetListenLoc( test );
+			return;
+		}
+	}
+	// too thick to listen through
+	stop();
 }
 
 bool idPhysics_Player::IsPeekLeaning( void )

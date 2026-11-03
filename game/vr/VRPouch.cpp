@@ -380,7 +380,19 @@ bool idVRPouch::Take( idPlayer *player, idVRHand &leftHand ) {
 	player->ChangeInventoryItemCount( item->GetName(), item->Category()->GetName(), -1 );
 	player->inventoryHUDNeedsUpdate = true;
 
-	leftHand.HoldEntity( player, takeEnt, 0, centre, mat3_identity, idVec3( 0, 0, 0 ) );
+	if ( idVRTools::IsPencilGrip( takeEnt ) ) {
+		// keys come out in their pencil grip
+		idVec3 anchor;
+		idMat3 handAxisInBody;
+		idVRTools::GetSnapGrip( takeEnt, anchor, handAxisInBody );
+		const idVec3 offset = idVRTools::GetSnapGripOffset( takeEnt );
+		const idMat3 entAxis = handAxisInBody.Transpose() * in.axis;
+		takeEnt->SetAxis( entAxis );
+		takeEnt->SetOrigin( in.pos + offset * in.axis - anchor * entAxis );
+		leftHand.HoldEntity( player, takeEnt, 0, anchor, handAxisInBody, offset );
+	} else {
+		leftHand.HoldEntity( player, takeEnt, 0, centre, mat3_identity, idVec3( 0, 0, 0 ) );
+	}
 	Close( player );
 	return true;
 }
