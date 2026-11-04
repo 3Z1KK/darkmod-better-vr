@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The VR menu room: a small old motel room (maps/vr_menu.map).
+"""The VR menu room: a small old inn room (maps/vr_menu.map), laid out after the user's sketch.
 
 Brushes for the shell (floor, walls with wainscot, ceiling with beams, a window), stock TDM models for the
 furniture, a rocking chair built from brushes (TDM has no rocking chair model), lights and fire.
@@ -9,7 +9,10 @@ particles), so it uses only plain entities: func_static models, lights (a light'
 a speaker. No fireplace light-holder entities with attachments: their parts are placed one by one.
 
 Plain Python. Usage: build_menu_room.py <out.map>
-Room interior: x 0..224 (west: door, east: fireplace), y 0..176 (south: bed, north: window), z 0..128.
+Room interior: x 0..224, y 0..240, z 0..128. North (+y): fireplace, a bin in the corner; middle: rug with the
+rocking chair and a stool facing the fire; east: table along the wall with two chairs, letters, a candle; west:
+window; south-west: bed; south: chest; south-east (east wall): door. The camera is at the bed's corner by the
+west wall, looking north-east over the room. Lit mostly by the fire, a little by the candle, least by the moon.
 1 unit = 2.3 cm.
 """
 import math
@@ -17,15 +20,15 @@ import sys
 
 CAULK = 'textures/common/caulk'
 FLOOR = 'textures/darkmod/wood/boards/worn_01'
-WALL_LOW = 'textures/darkmod/wood/panels/wood_brown_dull01_panel'
-WALL_HIGH = 'textures/darkmod/paint_paper/wallpaper_victorian_01'
-TRIM = 'textures/darkmod/wood/panels/molding_walnut'
-CEILING = 'textures/darkmod/plaster/tiling_1d/plaster_dirty01_grey'
+WALL_LOW = 'textures/darkmod/wood/boards/dark_rough'
+WALL_HIGH = 'textures/darkmod/wood/boards/rough_wood_brown_dull'
+TRIM = 'textures/darkmod/wood/boards/timber_ends_dark'
+CEILING = 'textures/darkmod/wood/boards/rough_wood_grey'
 BEAM = 'textures/darkmod/wood/boards/rough_wood_darkbrown_dull'
 WINDOW = 'textures/darkmod/window/wooden_frame01/wooden_frame01_moonlit'
 CHAIR_WOOD = 'textures/darkmod/wood/boards/rough_wood_darkbrown_dull'
 
-X0, X1, Y0, Y1, Z0, Z1 = 0, 224, 0, 176, 0, 128
+X0, X1, Y0, Y1, Z0, Z1 = 0, 224, 0, 240, 0, 128
 T = 8           # shell thickness
 RAIL = 40       # wainscot height
 
@@ -135,13 +138,16 @@ def shell():
         if axis == 0:
             tl[1], th[1] = Y0, Y1       # east/west walls run over the corners; their rail only along the room
         b.append(box(tuple(tl), tuple(th), TRIM, tile=32.0))
-    # the window on the north wall (a moonlit window texture over the wall face)
-    wx0, wx1, wz0, wz1 = 84, 140, 46, 110
-    corners = [(wx0, Y1 - 0.5, wz0), (wx1, Y1 - 0.5, wz0), (wx0, Y1 - 0.5, wz1), (wx1, Y1 - 0.5, wz1)]
-    b.append(box((wx0, Y1 - 0.5, wz0), (wx1, Y1, wz1), {'-y': WINDOW}, fit={'-y': corners}))
-    # ceiling beams (north-south)
-    for x in (56, 112, 168):
-        b.append(box((x - 5, Y0, Z1 - 9), (x + 5, Y1, Z1), BEAM, tile=64.0))
+    # the window on the west wall (a moonlit window texture over the wall face)
+    wy0, wy1, wz0, wz1 = 118, 174, 46, 110
+    corners = [(X0 + 0.5, wy0, wz0), (X0 + 0.5, wy1, wz0), (X0 + 0.5, wy0, wz1), (X0 + 0.5, wy1, wz1)]
+    b.append(box((X0, wy0, wz0), (X0 + 0.5, wy1, wz1), {'+x': WINDOW}, fit={'+x': corners}))
+    # ceiling beams (east-west) and timber posts in the corners and along the long walls
+    for y in (60, 120, 180):
+        b.append(box((X0, y - 5, Z1 - 9), (X1, y + 5, Z1), BEAM, tile=64.0))
+    posts = [(X0, Y0), (X1 - 8, Y0), (X0, Y1 - 8), (X1 - 8, Y1 - 8), (X0, 88), (X0, 200), (X1 - 8, 200)]	# (not where the table stands)
+    for x, y in posts:
+        b.append(box((x, y, Z0), (x + 8, y + 8, Z1), BEAM, tile=64.0))
     return b
 
 
@@ -194,11 +200,13 @@ def rocking_chair():
     return parts
 
 
-def offset_faces(faces, o):
+def offset_faces(faces, o, yaw=0.0):
+    """turn (degrees about z) and move a brush"""
+    c, s = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
     out = []
     for f in faces:
-        g = Face(f.n, f.d + dot(f.n, o), f.mat, f.tile, None)
-        out.append(g)
+        n = (f.n[0] * c - f.n[1] * s, f.n[0] * s + f.n[1] * c, f.n[2])
+        out.append(Face(n, f.d + dot(n, o), f.mat, f.tile, None))
     return out
 
 
@@ -216,63 +224,71 @@ def main(out):
         k += list(extra)
         ents.append((name, k, []))
 
-    # where the head is: the menu camera / the player start for looking at the room in the game
-    ents.append(('info_player_start_1', [('classname', 'info_player_start'), ('name', 'info_player_start_1'),
-                                         ('origin', '112 88 1'), ('angle', '0')], []))
+    def light(name, origin, keys):
+        ents.append((name, [('classname', 'light'), ('name', name), ('origin', '%g %g %g' % origin)] + list(keys), []))
 
-    # fireplace on the east wall, front to the west (the model's front is -y: angle 270), its parts as the
-    # fireplace light holder would attach them (offsets turned with it)
-    fp = (210, 88, 35.3)
-    static('vr_menu_fireplace', 'models/darkmod/fireplace/fireplace_brick.ase', fp, 270)
-    static('vr_menu_grate', 'models/darkmod/fireplace/grate.lwo', (fp[0], fp[1], fp[2] - 24), 270)
-    static('vr_menu_logs', 'models/darkmod/fireplace/burntwood.lwo', (fp[0], fp[1], fp[2] - 24), 270, [('skin', 'burning_logs')])
-    static('vr_menu_ash', 'models/darkmod/fireplace/ash_long.ase', (fp[0], fp[1], fp[2] - 30.5), 270)
-    # the fire: light with its flame particle
-    ents.append(('vr_menu_fire', [('classname', 'light'), ('name', 'vr_menu_fire'),
-                                  ('origin', '%g %g %g' % (fp[0] + 3, fp[1], fp[2] - 21)),
-                                  ('model', 'fireplace_flame_new01.prt'), ('texture', 'lights/fire_fireplace'),
-                                  ('_color', '0.90 0.56 0.27'), ('light_center', '0 0 4'),
-                                  ('light_radius', '260 260 220'), ('falloff', '0'), ('noshadows', '0')], []))
+    # where the head is: at the bed's corner by the west wall, looking north-east over the room
+    ents.append(('info_player_start_1', [('classname', 'info_player_start'), ('name', 'info_player_start_1'),
+                                         ('origin', '12 80 1'), ('angle', '45')], []))
+
+    # fireplace on the north wall, front to the south (the model's own front, -y), its parts placed as the fireplace
+    # light holder would attach them
+    fp = (99, 226, 35.3)
+    static('vr_menu_fireplace', 'models/darkmod/fireplace/fireplace_brick.ase', fp)
+    static('vr_menu_grate', 'models/darkmod/fireplace/grate.lwo', (fp[0], fp[1], fp[2] - 24))
+    static('vr_menu_logs', 'models/darkmod/fireplace/burntwood.lwo', (fp[0], fp[1], fp[2] - 24), 0, [('skin', 'burning_logs')])
+    static('vr_menu_ash', 'models/darkmod/fireplace/ash_long.ase', (fp[0], fp[1], fp[2] - 30.5))
+    # the fire is the room's main light
+    light('vr_menu_fire', (fp[0], fp[1] + 3, fp[2] - 21), [
+        ('model', 'fireplace_flame_new01.prt'), ('texture', 'lights/fire_fireplace'), ('_color', '0.90 0.56 0.27'),
+        ('light_center', '0 0 4'), ('light_radius', '260 260 220'), ('falloff', '0')])
     ents.append(('vr_menu_fire_sound', [('classname', 'speaker'), ('name', 'vr_menu_fire_sound'),
-                                        ('origin', '%g %g %g' % (fp[0], fp[1], 20)),
+                                        ('origin', '%g %g %g' % (fp[0], fp[1] - 6, 20)),
                                         ('s_shader', 'element_fire_fireplace'), ('s_looping', '1'),
                                         ('s_waitfortrigger', '0'), ('s_maxdistance', '40'), ('s_mindistance', '4')], []))
+    # a bin in the north-east corner
+    static('vr_menu_bin', 'models/darkmod/containers/waste_basket_001.lwo', (204, 220, 0))
 
-    # rug in front of the fire, long side north-south
-    static('vr_menu_rug', 'models/darkmod/decorative/rug01.lwo', (150, 88, 0.1), 90)
-    # the rocking chair before the fire (brushes, see rocking_chair)
-    rc = (158, 90, 0)
+    # rug in the middle, the rocking chair on it facing the fire, a stool with a bottle beside it
+    static('vr_menu_rug', 'models/darkmod/decorative/rug01.lwo', (93, 143, 0.1))
     ents.append(('vr_menu_rocking_chair', [('classname', 'func_static'), ('name', 'vr_menu_rocking_chair'),
                                            ('model', 'vr_menu_rocking_chair'), ('origin', '0 0 0')],
-                 [offset_faces(p, rc) for p in rocking_chair()]))
-    # the stool beside it, a bottle on it
-    static('vr_menu_stool', 'models/darkmod/furniture/seating/stool_round_rough.lwo', (172, 120, 0))
-    static('vr_menu_bottle', 'models/darkmod/kitchen/bottle_simple_01.ase', (172, 120, 20.9))
+                 [offset_faces(p, (66, 166, 0.1), 90) for p in rocking_chair()]))
+    static('vr_menu_stool', 'models/darkmod/furniture/seating/stool_round_rough.lwo', (98, 168, 0.1))
+    static('vr_menu_bottle', 'models/darkmod/kitchen/bottle_simple_01.ase', (98, 168, 21))
 
-    # the door on the west wall (frame across the wall: angle 90), the door closed inside the frame
-    dy = 132
-    static('vr_menu_doorframe', 'models/darkmod/architecture/doorframes/door_frame_wood_96x48.ase', (0, dy, 1.3), 90)
-    static('vr_menu_door', 'models/darkmod/architecture/doors/door96x48_2hinge.lwo', (0, dy - 24, 0), 90)
-    # the table next to the door, the chair in front of it (facing the table: west, angle 90)
-    static('vr_menu_table', 'models/darkmod/furniture/tables/table_wood_rough_small.lwo', (32, 60, 0))
-    static('vr_menu_chair', 'models/darkmod/furniture/seating/rusticchair.lwo', (72, 60, 19.9), 90)
-    # a candle on the table
-    static('vr_menu_candle', 'models/darkmod/lights/extinguishable/candle_wide.lwo', (28, 52, 36.7 + 7.0))
-    ents.append(('vr_menu_candle_flame', [('classname', 'light'), ('name', 'vr_menu_candle_flame'),
-                                          ('origin', '28 52 44.6'), ('model', 'tdm_fire_candle.prt'),
-                                          ('texture', 'lights/biground_candleflicker_shadow'),
-                                          ('_color', '0.55 0.38 0.18'), ('light_radius', '110 110 110')], []))
+    # the table along the east wall (long side north-south), a chair at its west side facing it and one at its
+    # south end; letters, papers, a book, ink and a candle on it
+    tz = 34.5
+    static('vr_menu_table', 'models/darkmod/furniture/tables/table_tavern01.lwo', (197, 138, 0), 90)
+    static('vr_menu_chair', 'models/darkmod/furniture/seating/rusticchair.lwo', (160, 143, 19.9), 270)
+    static('vr_menu_chair2', 'models/darkmod/furniture/seating/rusticchair.lwo', (205, 76, 19.9), 0)
+    static('vr_menu_letter1', 'models/darkmod/readables/letter_001.lwo', (190, 150, tz + 0.05), 20)
+    static('vr_menu_letter2', 'models/darkmod/readables/letter_001.lwo', (197, 158, tz + 0.15), 345)
+    static('vr_menu_letter3', 'models/darkmod/readables/letter_001.lwo', (186, 139, tz + 0.05), 75)
+    static('vr_menu_paper1', 'models/darkmod/readables/paper1.lwo', (195, 170, tz + 0.05), 10)
+    static('vr_menu_paper2', 'models/darkmod/readables/paper2.lwo', (189, 124, tz + 0.05), 290)
+    static('vr_menu_papers', 'models/darkmod/readables/paper_stack_001.lwo', (206, 147, tz))
+    static('vr_menu_book', 'models/darkmod/readables/book_open1_small.lwo', (200, 106, tz), 95)
+    static('vr_menu_ink', 'models/darkmod/misc/ink_pot02_wquill.lwo', (210, 168, tz), 200)
+    static('vr_menu_candle', 'models/darkmod/lights/extinguishable/candle_wide.lwo', (209, 124, tz + 7.0))
+    light('vr_menu_candle_flame', (209, 124, tz + 7.9), [
+        ('model', 'tdm_fire_candle.prt'), ('texture', 'lights/biground_candleflicker_shadow'),
+        ('_color', '0.36 0.25 0.11'), ('light_radius', '100 100 90')])
 
-    # the bed along the south wall, headboard to the west
-    static('vr_menu_bed', 'models/darkmod/furniture/beds/bed_single_timber.ase', (146, 34.5, 0), 90)
+    # the bed in the south-west corner (headboard to the west), a chest at the foot of the south wall
+    static('vr_menu_bed', 'models/darkmod/furniture/beds/bed_single_timber.ase', (53, 35, 0), 90)
+    static('vr_menu_chest', 'models/darkmod/containers/openable/chest_old_body.lwo', (145, 16, 0), 180)
+    static('vr_menu_chest_lid', 'models/darkmod/containers/openable/chest_old_lid.lwo', (145, 1.7, 22), 180)
 
-    # moonlight through the window, and a faint fill so nothing is pitch black
-    ents.append(('vr_menu_moon', [('classname', 'light'), ('name', 'vr_menu_moon'), ('origin', '112 150 96'),
-                                  ('texture', 'lights/biground1'), ('_color', '0.16 0.20 0.32'),
-                                  ('light_radius', '170 150 150')], []))
-    ents.append(('vr_menu_fill', [('classname', 'light'), ('name', 'vr_menu_fill'), ('origin', '112 88 80'),
-                                  ('texture', 'lights/biground1'), ('_color', '0.07 0.06 0.06'),
-                                  ('noshadows', '1'), ('light_radius', '260 220 160')], []))
+    # the door on the east wall, south end (frame across the wall), closed in its frame
+    dy = 34
+    static('vr_menu_doorframe', 'models/darkmod/architecture/doorframes/door_frame_wood_96x48.ase', (X1, dy, 1.3), 90)
+    static('vr_menu_door', 'models/darkmod/architecture/doors/door96x48_2hinge.lwo', (X1, dy - 24, 0), 90)
+
+    # a little moonlight through the window: the least of the three
+    light('vr_menu_moon', (14, 146, 92), [('texture', 'lights/biground1'), ('_color', '0.045 0.055 0.09'),
+                                         ('light_radius', '130 120 120')])
 
     text = 'Version 2\n'
     for i, (_, keys, brushes) in enumerate(ents):
