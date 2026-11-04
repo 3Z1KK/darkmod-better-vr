@@ -348,9 +348,9 @@ brushDef3
 "origin" "99 229 14.3"
 "model" "fireplace_flame_new01.prt"
 "texture" "lights/fire_fireplace"
-"_color" "0.90 0.56 0.27"
-"light_center" "0 0 4"
-"light_radius" "260 260 220"
+"_color" "1.0 0.62 0.30"
+"light_center" "0 -15 8"
+"light_radius" "300 300 240"
 "falloff" "0"
 }
 // entity 7

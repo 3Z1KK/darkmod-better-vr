@@ -240,8 +240,10 @@ def main(out):
     static('vr_menu_ash', 'models/darkmod/fireplace/ash_long.ase', (fp[0], fp[1], fp[2] - 30.5))
     # the fire is the room's main light
     light('vr_menu_fire', (fp[0], fp[1] + 3, fp[2] - 21), [
-        ('model', 'fireplace_flame_new01.prt'), ('texture', 'lights/fire_fireplace'), ('_color', '0.90 0.56 0.27'),
-        ('light_center', '0 0 4'), ('light_radius', '260 260 220'), ('falloff', '0')])
+        # the flame sits deep in the firebox, where the bricks shadow it: the light itself comes from the front
+        # of the firebox (light_center), so it reaches the room
+        ('model', 'fireplace_flame_new01.prt'), ('texture', 'lights/fire_fireplace'), ('_color', '1.0 0.62 0.30'),
+        ('light_center', '0 -15 8'), ('light_radius', '300 300 240'), ('falloff', '0')])
     ents.append(('vr_menu_fire_sound', [('classname', 'speaker'), ('name', 'vr_menu_fire_sound'),
                                         ('origin', '%g %g %g' % (fp[0], fp[1] - 6, 20)),
                                         ('s_shader', 'element_fire_fireplace'), ('s_looping', '1'),
