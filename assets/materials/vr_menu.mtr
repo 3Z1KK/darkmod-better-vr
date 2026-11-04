@@ -1,0 +1,17 @@
+// VR menu room (renderer/vr/VRMenuRoom.cpp)
+
+// the menu laser: a glowing beam, coloured by the entity (parm0-2)
+vr/menu_laser
+{
+	noShadows
+	noSelfShadow
+	twoSided
+	translucent
+	{
+		blend	add
+		map		_white
+		red		Parm0 * 0.6
+		green	Parm1 * 0.6
+		blue	Parm2 * 0.6
+	}
+}

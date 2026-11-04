@@ -22,6 +22,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "renderer/backend/FrameBuffer.h"
 #include "game/gamesys/SysCvar.h"
 #include "game/Missions/MissionManager.h"
+#include "renderer/vr/VRMenuRoom.h"
 
 idCVar	idSessionLocal::com_showAngles( "com_showAngles", "0", CVAR_SYSTEM | CVAR_BOOL, "" );
 idCVar	idSessionLocal::com_minTics( "com_minTics", "0", CVAR_SYSTEM, "" );
@@ -376,6 +377,7 @@ idSessionLocal::Shutdown
 ===============
 */
 void idSessionLocal::Shutdown() {
+	vrMenuRoom.Free();
 	int i;
 
 	TerminateFrontendThread();
@@ -1466,6 +1468,9 @@ bool idSessionLocal::ExecuteMapChange(idFile* savegameFile, bool noFadeWipe ) {
 
 	// close console and remove any prints from the notify lines
 	console->Close();
+
+	// VR: the menu room goes while a mission loads (the level load purges models it would still use)
+	vrMenuRoom.Free();
 
 	// mute sound
 	soundSystem->SetMute( true );
@@ -2617,7 +2622,13 @@ void idSessionLocal::Draw() {
 		ScheduleTonemap( true );
 		guiTest->Redraw( com_frameTime );
 	} else if ( guiActive && !guiActive->State().GetBool( "gameDraw" ) ) {
-		ScheduleTonemap( true );
+		// VR: the main menu hangs in the menu room (drawn around the headset), not on black
+		if ( guiActive == guiMainMenu && vrMenuRoom.Draw() ) {
+			frameData->render2D = false;
+			ScheduleTonemap( false );
+		} else {
+			ScheduleTonemap( true );
+		}
 
 		// draw the frozen gui in the background
 		if ( guiActive == guiMsg && guiMsgRestore ) {

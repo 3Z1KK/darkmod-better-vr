@@ -256,7 +256,9 @@ void OpenXRInput::CreateAllActions() {
 
 	menuActionSet = CreateActionSet( "menu" );
 	CreateAction( menuActionSet, XR_MENU_AIM, XR_ACTION_TYPE_POSE_INPUT, 2, handPaths );
-	CreateAction( menuActionSet, XR_MENU_CLICK, XR_ACTION_TYPE_BOOLEAN_INPUT, 2, handPaths );
+	// the trigger's value: the runtime's own boolean threshold has no hysteresis, a trigger resting near it made
+	// bursts of clicks; HandleMenuInput thresholds it itself
+	CreateAction( menuActionSet, XR_MENU_CLICK, XR_ACTION_TYPE_FLOAT_INPUT, 2, handPaths );
 	CreateAction( menuActionSet, XR_MENU_ESCAPE, XR_ACTION_TYPE_BOOLEAN_INPUT, 2, handPaths );
 }
 
@@ -362,6 +364,7 @@ void OpenXRInput::UpdateInput( int axis[6], idList<padActionChange_t> &actionCha
 		HandleMenuInput( referenceSpace, time, actionChanges );
 		return;
 	}
+	ReleaseMenuClick();
 
 	idList<XrActiveActionSet> activeActionSets {
 		{ ingameActionSet, XR_NULL_PATH },
@@ -501,6 +504,42 @@ void OpenXRInput::ReleaseHeldButtons( idList<padActionChange_t> &actionChanges )
 	}
 }
 
+idCVar vr_menuPressThreshold( "vr_menuPressThreshold", "0.7", CVAR_GAME | CVAR_FLOAT, "VR menu: trigger value that clicks" );
+idCVar vr_menuReleaseThreshold( "vr_menuReleaseThreshold", "0.3", CVAR_GAME | CVAR_FLOAT, "VR menu: trigger value that lets go again (below the click value, so a trigger resting near one value doesn't flicker)" );
+idCVar vr_menuClickDebounce( "vr_menuClickDebounce", "120", CVAR_GAME | CVAR_INTEGER, "VR menu: minimum time (ms) between a change of the click and the next one" );
+idCVar vr_menuPointerSmoothing( "vr_menuPointerSmoothing", "0.06", CVAR_GAME | CVAR_FLOAT, "VR menu: how long (s) the cursor takes to follow the laser (steadies the hand); 0 = off" );
+idCVar vr_menuPointerHoldSmoothing( "vr_menuPointerHoldSmoothing", "0.15", CVAR_GAME | CVAR_FLOAT, "VR menu: the same while the trigger is held (dragging sliders steadily)" );
+
+namespace {
+	vrMenuPointer_t menuPointer;
+}
+
+const vrMenuPointer_t &VR_GetMenuPointer() {
+	return menuPointer;
+}
+
+void OpenXRInput::ReleaseMenuClick() {
+	// a mouse button held down in a menu must never stay down (sliders kept dragging)
+	if ( menuClickDown ) {
+		sysEvent_t clickEvent = sys->GenerateMouseButtonEvent( 1, false );
+		Sys_QueEvent( 0, clickEvent.evType, clickEvent.evValue, clickEvent.evValue2, clickEvent.evPtrLength, clickEvent.evPtr );
+		menuClickDown = false;
+	}
+	menuPointer.valid = false;
+	menuPointer.pressed = false;
+	smoothedIntersect.Set( -1, -1 );
+}
+
+/*
+ * Menus with the controllers: a laser from the pointing hand to the menu panel moves the cursor, its trigger clicks.
+ *  - the click comes from the trigger's analog value with hysteresis and a debounce time: the boolean action with
+ *    the runtime's threshold flickered for a trigger resting near it, sending bursts of clicks (tutorial pages and
+ *    briefings were skipped)
+ *  - the button state is sent by level and let go of whenever the menu loses the controllers or the GUI goes
+ *    away, so a slider can't keep dragging
+ *  - the cursor follows the laser smoothed (hand shake), more while the trigger is held, and stays put in the frame
+ *    the trigger goes down (pulling the trigger moves the controller a little)
+ */
 void OpenXRInput::HandleMenuInput( XrSpace referenceSpace, XrTime time, idList<padActionChange_t> &actionChanges ) {
 	// nothing stays held in the game while a menu has the controllers
 	ReleaseHeldButtons( actionChanges );
@@ -510,43 +549,96 @@ void OpenXRInput::HandleMenuInput( XrSpace referenceSpace, XrTime time, idList<p
 	};
 	SyncActions( activeActionSets );
 
-	auto handAimState = GetPose( XR_MENU_AIM, referenceSpace, time, handPaths[activeMenuHand] );
+	const int now = Sys_Milliseconds();
+	const float dt = idMath::ClampFloat( 0.0f, 0.1f, ( now - lastMenuInputTime ) * 0.001f );
+	lastMenuInputTime = now;
+
 	idPlayer *player = gameLocal.GetLocalPlayer();
 	idUserInterface* gui = sessLocal.guiActive;
-	if ( !gui ) {
+	if ( !gui && player ) {
 		gui = player->ActiveGui();
 	}
+
+	const float trigger = GetFloat( XR_MENU_CLICK, handPaths[activeMenuHand] ).second;
+	bool wantDown = menuClickDown;
+	if ( menuNeedsRelease ) {
+		// this hand just became the pointing hand by its pull: no click until it lets go
+		if ( trigger < vr_menuReleaseThreshold.GetFloat() ) {
+			menuNeedsRelease = false;
+		}
+	} else if ( !menuClickDown && trigger > vr_menuPressThreshold.GetFloat() ) {
+		wantDown = true;
+	} else if ( menuClickDown && trigger < vr_menuReleaseThreshold.GetFloat() ) {
+		wantDown = false;
+	}
+	const bool clickChanges = gui && wantDown != menuClickDown && now - menuClickChangeTime >= vr_menuClickDebounce.GetInteger();
+
+	auto handAimState = GetPose( XR_MENU_AIM, referenceSpace, time, handPaths[activeMenuHand] );
+	menuPointer.valid = handAimState.first && gui != nullptr;
 	if ( handAimState.first && gui ) {
-		idVec2 uiIntersect = FindGuiOverlayIntersection( handAimState.second );
-		if ( ( uiIntersect - curOverlayIntersect ).LengthSqr() > 0.00001 ) {
+		const idVec2 target = FindGuiOverlayIntersection( handAimState.second );
+		const bool onPanel = target.x >= 0.0f && target.x <= 1.0f && target.y >= 0.0f && target.y <= 1.0f;
+		if ( smoothedIntersect.x < -0.5f || !onPanel ) {
+			smoothedIntersect = target;
+		} else {
+			const float tau = menuClickDown ? vr_menuPointerHoldSmoothing.GetFloat() : vr_menuPointerSmoothing.GetFloat();
+			const float follow = tau > 0.0f ? 1.0f - idMath::Exp( -dt / tau ) : 1.0f;
+			smoothedIntersect += ( target - smoothedIntersect ) * follow;
+		}
+		const idVec2 uiIntersect = smoothedIntersect;
+		if ( ( uiIntersect - curOverlayIntersect ).LengthSqr() > 0.000004f && !( clickChanges && wantDown ) ) {
 			curOverlayIntersect = uiIntersect;
 			sysEvent_t moveEvent = sys->GenerateMouseMoveEvent( 0, 0 );
+			gui->SetCursor( 640 * uiIntersect.x, 480 * uiIntersect.y );
 			if ( gui == sessLocal.guiActive ) {
-				gui->SetCursor( 640 * uiIntersect.x, 480 * uiIntersect.y );
 				Sys_QueEvent( 0, moveEvent.evType, moveEvent.evValue, moveEvent.evValue2, moveEvent.evPtrLength, moveEvent.evPtr );
-			} else {
-				gui->SetCursor( 640 * uiIntersect.x, 480 * uiIntersect.y );
+			} else if ( player ) {
 				auto command = gui->HandleEvent( &moveEvent, 0 );
 				player->HandleGuiCommands( player, command );
 			}
 		}
+
+		// for drawing the laser: from the controller to the panel, or a short way if it points elsewhere
+		const XrPosef &pose = handAimState.second;
+		const idQuat q( pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w );
+		const idVec3 o( pose.position.x, pose.position.y, pose.position.z );
+		const idVec3 dir = q * idVec3( 0, 0, -1 );
+		float length = 1.0f;
+		if ( onPanel && dir.z < -1e-4f ) {
+			length = ( -vr_uiOverlayDistance.GetFloat() - o.z ) / dir.z;
+		}
+		const idVec3 e = o + dir * Max( 0.0f, length );
+		menuPointer.start = Vec3FromXr( XrVector3f{ o.x, o.y, o.z } );
+		menuPointer.end = Vec3FromXr( XrVector3f{ e.x, e.y, e.z } );
+		menuPointer.onPanel = onPanel;
 	}
 
-	auto menuClickState = GetBool( XR_MENU_CLICK, handPaths[activeMenuHand] );
-	if ( menuClickState.first && gui ) {
+	if ( clickChanges ) {
+		menuClickDown = wantDown;
+		menuClickChangeTime = now;
 		if ( gui == sessLocal.guiActive ) {
-			sysEvent_t clickEvent = sys->GenerateMouseButtonEvent( 1, menuClickState.second );
+			sysEvent_t clickEvent = sys->GenerateMouseButtonEvent( 1, menuClickDown );
 			Sys_QueEvent( 0, clickEvent.evType, clickEvent.evValue, clickEvent.evValue2, clickEvent.evPtrLength, clickEvent.evPtr );
 		} else {
 			// hack: needed to pass the mission start dialogue
-			actionChanges.AddGrow( { UB_ATTACK, "", menuClickState.second } );
+			actionChanges.AddGrow( { UB_ATTACK, "", menuClickDown } );
 			fakeAttackPressed = true;
 		}
+	} else if ( !gui && menuClickDown ) {
+		ReleaseMenuClick();
 	}
+	menuPointer.pressed = menuClickDown;
 
-	auto altHandClick = GetBool( XR_MENU_CLICK, handPaths[!activeMenuHand] );
-	if ( altHandClick.first ) {
+	// the other hand's trigger makes it the pointing hand (not while this one holds a click; that pull doesn't click)
+	const float altTrigger = GetFloat( XR_MENU_CLICK, handPaths[!activeMenuHand] ).second;
+	const bool altDown = altClickDown ? altTrigger > vr_menuReleaseThreshold.GetFloat() : altTrigger > vr_menuPressThreshold.GetFloat();
+	if ( altDown && !altClickDown && !menuClickDown ) {
 		activeMenuHand = !activeMenuHand;
+		smoothedIntersect.Set( -1, -1 );
+		menuNeedsRelease = true;
+		altClickDown = false;
+	} else {
+		altClickDown = altDown;
 	}
 
 	auto menuEscapeState = GetBool( XR_MENU_ESCAPE );
@@ -605,7 +697,7 @@ void OpenXRInput::ClearInputState() {
 	GetBool( XR_USE_ITEM );
 	GetBool( XR_DROP_ITEM );
 	GetBool( XR_LANTERN );
-	GetBool( XR_MENU_CLICK );
+	GetFloat( XR_MENU_CLICK );
 	GetBool( XR_MENU_ESCAPE );
 }
 

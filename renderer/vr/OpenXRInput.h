@@ -42,6 +42,16 @@ struct poseInput_t {
 	float turnStickY;	// the turning stick's up/down (-1..1), for the game (spyglass zoom)
 };
 
+// the menu laser, for drawing it (game units, in the headset's reference space as the eye poses)
+struct vrMenuPointer_t {
+	bool valid = false;		// a menu has the controllers and the pointing hand is tracked
+	bool onPanel = false;	// it points at the menu panel
+	idVec3 start;
+	idVec3 end;
+	bool pressed = false;
+};
+const vrMenuPointer_t &VR_GetMenuPointer();
+
 class OpenXRInput {
 public:
 	void Init(XrInstance instance, XrSession session);
@@ -103,7 +113,14 @@ private:
 
 	XrPosef guiOverlayPose;
 	idVec2 curOverlayIntersect;
+	idVec2 smoothedIntersect = idVec2( -1, -1 );
 	int activeMenuHand = 0;
+	// menu click: the trigger's analog value with hysteresis, debounced (see HandleMenuInput)
+	bool menuClickDown = false;
+	bool altClickDown = false;
+	bool menuNeedsRelease = false;
+	int menuClickChangeTime = 0;
+	int lastMenuInputTime = 0;
 	bool fakeAttackPressed = false;
 	// held game buttons as last told to the game (sent by level, not by change: a change can be lost between syncs)
 	bool sentDown[XR_NUM_ACTIONS] = {};
@@ -124,6 +141,7 @@ private:
 	void ClearInputState();
 	void SendButtonLevel( Action action, int button, idList<padActionChange_t> &actionChanges );
 	void ReleaseHeldButtons( idList<padActionChange_t> &actionChanges );
+	void ReleaseMenuClick();
 
 	XrSpace FindActionSpace( Action action, XrPath subPath = XR_NULL_PATH );
 	std::pair<bool, bool> GetBool( Action action, XrPath subPath = XR_NULL_PATH );
