@@ -27,6 +27,7 @@
 #include "renderer/backend/RenderBackend.h"
 #include "renderer/backend/qgl/qgl.h"
 #include "renderer/backend/ImmediateRendering.h"
+#include "renderer/vr/VRMenuRoom.h"
 
 OpenXRBackend xrImpl;
 OpenXRBackend *vrBackend = &xrImpl;
@@ -40,6 +41,15 @@ idCVar vr_uiOverlayHeight( "vr_uiOverlayHeight", "2", CVAR_RENDERER|CVAR_FLOAT|C
 idCVar vr_uiOverlayAspect( "vr_uiOverlayAspect", "1.5", CVAR_RENDERER|CVAR_FLOAT|CVAR_ARCHIVE, "Aspect ratio of the UI overlay" );
 idCVar vr_uiOverlayDistance( "vr_uiOverlayDistance", "2.5", CVAR_RENDERER|CVAR_FLOAT|CVAR_ARCHIVE, "Distance in metres from the player position at which the UI overlay is positioned" );
 idCVar vr_uiOverlayVerticalOffset( "vr_uiOverlayVerticalOffset", "-0.5", CVAR_RENDERER|CVAR_FLOAT|CVAR_ARCHIVE, "Vertical offset in metres of the UI overlay's position" );
+idCVar vr_menuRoomPanelOffset( "vr_menuRoomPanelOffset", "0.05", CVAR_RENDERER|CVAR_FLOAT|CVAR_ARCHIVE, "VR: in the menu room, height of the menu panel's centre above the eyes (metres)" );
+idCVar vr_menuRoomPanelShift( "vr_menuRoomPanelShift", "-0.6", CVAR_RENDERER|CVAR_FLOAT|CVAR_ARCHIVE, "VR: in the menu room, sideways shift of the menu panel (metres, negative = left): the menu's paper is right of the panel's centre, this brings it in front" );
+
+XrVector3f VR_UiOverlayPosition() {
+	if ( vrMenuRoom.IsShowing() ) {
+		return { vr_menuRoomPanelShift.GetFloat(), vr_menuRoomPanelOffset.GetFloat(), -vr_uiOverlayDistance.GetFloat() };
+	}
+	return { 0.0f, vr_uiOverlayVerticalOffset.GetFloat(), -vr_uiOverlayDistance.GetFloat() };
+}
 idCVar vr_aimIndicator("vr_aimIndicator", "1", CVAR_BOOL|CVAR_RENDERER|CVAR_ARCHIVE, "Display an aim indicator to show where the mouse is currently aiming at");
 idCVar vr_aimIndicatorSize("vr_aimIndicatorSize", "0.5", CVAR_FLOAT|CVAR_RENDERER|CVAR_ARCHIVE, "Size of the mouse aim indicator");
 idCVar vr_aimIndicatorColorR("vr_aimIndicatorColorR", "0.5", CVAR_FLOAT|CVAR_RENDERER|CVAR_ARCHIVE, "Red component of the mouse aim indicator color");
@@ -1131,7 +1141,7 @@ void OpenXRBackend::SubmitFrame() {
 		seatedSpace,
 		XR_EYE_VISIBILITY_BOTH,
 		uiSwapchain->CurrentSwapchainSubImage(),
-		{ {0, 0, 0, 1}, {0, vr_uiOverlayVerticalOffset.GetFloat(), -vr_uiOverlayDistance.GetFloat()} },
+		{ {0, 0, 0, 1}, VR_UiOverlayPosition() },
 		{ vr_uiOverlayHeight.GetFloat() * vr_uiOverlayAspect.GetFloat(), vr_uiOverlayHeight.GetFloat() },
 	};
 	idList<const XrCompositionLayerBaseHeader *> submittedLayers = {

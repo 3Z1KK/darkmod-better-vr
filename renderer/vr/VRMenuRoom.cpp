@@ -188,6 +188,14 @@ void VRMenuRoom::UpdateLaser( const renderView_t &view ) {
 	}
 }
 
+bool VRMenuRoom::IsShowing() const {
+	return world != nullptr && Sys_Milliseconds() - lastDrawTime < 250;
+}
+
+bool VRMenuRoom::HidesMenuBackgrounds() const {
+	return vr_menuRoom.GetBool() && !loadFailed;
+}
+
 bool VRMenuRoom::Draw() {
 	if ( !vr_menuRoom.GetBool() ) {
 		return false;
@@ -217,5 +225,6 @@ bool VRMenuRoom::Draw() {
 	}
 	UpdateLaser( view );
 	world->RenderScene( view );
+	lastDrawTime = Sys_Milliseconds();
 	return true;
 }

@@ -25,6 +25,8 @@ extern idCVar vr_uiOverlayHeight;
 extern idCVar vr_uiOverlayAspect;
 extern idCVar vr_uiOverlayDistance;
 extern idCVar vr_uiOverlayVerticalOffset;
+// centre of the UI panel in the seated (LOCAL) space, metres: raised and shifted in the menu room
+XrVector3f VR_UiOverlayPosition();
 extern idCVar vr_aimIndicatorSize;
 extern idCVar vr_aimIndicatorRangedMultiplier;
 extern idCVar vr_aimIndicatorRangedSize;

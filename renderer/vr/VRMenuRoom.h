@@ -33,6 +33,10 @@ public:
 	// draws the room for this frame (call where a 3D view goes, before the tonemap). false if there is no room
 	bool	Draw();
 	void	Free();
+	// the room was drawn just now (the menu panel moves for it)
+	bool	IsShowing() const;
+	// the main menu leaves out its full-screen background layers (the paper menus hang in the room on their own)
+	bool	HidesMenuBackgrounds() const;
 
 private:
 	bool	Load();
@@ -44,6 +48,7 @@ private:
 	idVec3			eyeOrigin;
 	float			yaw = 0.0f;
 	int				startTime = 0;
+	int				lastDrawTime = -100000;
 	idRenderModel *	laserModel = nullptr;
 	qhandle_t		laserHandle = -1;
 };

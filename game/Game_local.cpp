@@ -21,6 +21,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 
 
 #include "Game_local.h"
+#include "renderer/vr/VRMenuRoom.h"
 #include "DarkModGlobals.h"
 #include "darkModLAS.h"
 #include "declxdata.h"
@@ -4352,6 +4353,19 @@ void idGameLocal::HandleMainMenuCommands( const char *menuCommand, idUserInterfa
 				//usually we only read plain values of macros, but this limitation is a problem for backgrounds meta states
 				//so we allow setting name of another backgrounds macro as value
 				targetBackgroundsLayersStr = gui->GetStateString("#" + targetBackgroundsLayersStr, "");
+			}
+			if (vrMenuRoom.HidesMenuBackgrounds()) {
+				// VR menu room: only the paper menus hang in the room, without the full-screen backgrounds
+				// (titles drawn as backgrounds, "Mission Complete", stay)
+				idStrList layers = targetBackgroundsLayersStr.Split(",", true);
+				targetBackgroundsLayersStr = "";
+				for (int i = 0; i < layers.Num(); i++) {
+					if (layers[i].Find("Title") >= 0) {
+						if (!targetBackgroundsLayersStr.IsEmpty())
+							targetBackgroundsLayersStr += ",";
+						targetBackgroundsLayersStr += layers[i];
+					}
+				}
 			}
 			idStr backgroundsLayersStr = gui->GetStateString("backgrounds");
 			if (backgroundsLayersStr != targetBackgroundsLayersStr) {

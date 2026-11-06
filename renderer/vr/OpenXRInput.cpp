@@ -504,6 +504,18 @@ void OpenXRInput::ReleaseHeldButtons( idList<padActionChange_t> &actionChanges )
 	}
 }
 
+namespace {
+	// the aim pose's forward (-z) in the space it is given in (XR axes)
+	idVec3 XrPoseForward( const XrPosef &pose ) {
+		const XrQuaternionf &q = pose.orientation;
+		return idVec3( -2.0f * ( q.x * q.z + q.w * q.y ), -2.0f * ( q.y * q.z - q.w * q.x ), -( 1.0f - 2.0f * ( q.x * q.x + q.y * q.y ) ) );
+	}
+
+	idVec2 UiOverlaySize() {
+		return idVec2( vr_uiOverlayAspect.GetFloat(), 1 ) * vr_uiOverlayHeight.GetFloat();
+	}
+}
+
 idCVar vr_menuPressThreshold( "vr_menuPressThreshold", "0.7", CVAR_GAME | CVAR_FLOAT, "VR menu: trigger value that clicks" );
 idCVar vr_menuReleaseThreshold( "vr_menuReleaseThreshold", "0.3", CVAR_GAME | CVAR_FLOAT, "VR menu: trigger value that lets go again (below the click value, so a trigger resting near one value doesn't flicker)" );
 idCVar vr_menuClickDebounce( "vr_menuClickDebounce", "120", CVAR_GAME | CVAR_INTEGER, "VR menu: minimum time (ms) between a change of the click and the next one" );
@@ -598,16 +610,15 @@ void OpenXRInput::HandleMenuInput( XrSpace referenceSpace, XrTime time, idList<p
 			}
 		}
 
-		// for drawing the laser: from the controller to the panel, or a short way if it points elsewhere
+		// for drawing the laser: from the controller to the cursor on the panel, or a short way if it points elsewhere
 		const XrPosef &pose = handAimState.second;
-		const idQuat q( pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w );
 		const idVec3 o( pose.position.x, pose.position.y, pose.position.z );
-		const idVec3 dir = q * idVec3( 0, 0, -1 );
-		float length = 1.0f;
-		if ( onPanel && dir.z < -1e-4f ) {
-			length = ( -vr_uiOverlayDistance.GetFloat() - o.z ) / dir.z;
+		idVec3 e = o + XrPoseForward( pose );
+		if ( onPanel ) {
+			const XrVector3f centre = VR_UiOverlayPosition();
+			const idVec2 size = UiOverlaySize();
+			e.Set( centre.x + ( uiIntersect.x - 0.5f ) * size.x, centre.y + ( 0.5f - uiIntersect.y ) * size.y, centre.z );
 		}
-		const idVec3 e = o + dir * Max( 0.0f, length );
 		menuPointer.start = Vec3FromXr( XrVector3f{ o.x, o.y, o.z } );
 		menuPointer.end = Vec3FromXr( XrVector3f{ e.x, e.y, e.z } );
 		menuPointer.onPanel = onPanel;
@@ -650,29 +661,21 @@ void OpenXRInput::HandleMenuInput( XrSpace referenceSpace, XrTime time, idList<p
 }
 
 idVec2 OpenXRInput::FindGuiOverlayIntersection( XrPosef pointerPose ) {
-	// FIXME: will need to be calculated dynamically in the future
-	guiOverlayPose = { {0, 0, 0, 1}, {0, vr_uiOverlayVerticalOffset.GetFloat(), -vr_uiOverlayDistance.GetFloat()} };
-	idQuat uiOrientation ( guiOverlayPose.orientation.x, guiOverlayPose.orientation.y, guiOverlayPose.orientation.z, guiOverlayPose.orientation.w );
-	idVec3 uiOrigin ( guiOverlayPose.position.x, guiOverlayPose.position.y, guiOverlayPose.position.z );
-	idQuat pointerOrientation ( pointerPose.orientation.x, pointerPose.orientation.y, pointerPose.orientation.z, pointerPose.orientation.w );
-	idVec3 pointerOrigin ( pointerPose.position.x, pointerPose.position.y, pointerPose.position.z );
-
-	idQuat pointerInUiOrientation = /*uiOrientation */ pointerOrientation;
-	idVec3 pointerInUiOrigin = uiOrientation * ( pointerOrigin - uiOrigin );
-	idVec3 pointerDir = pointerInUiOrientation * idVec3(0, 0, 1);
-	pointerDir.Normalize();
-
-	float t = pointerInUiOrigin.z / pointerDir.z;
-	if ( t < 0 ) {
-		return idVec2 (-1, -1);
+	// the panel faces the player (no rotation), centred at VR_UiOverlayPosition
+	const XrVector3f centre = VR_UiOverlayPosition();
+	guiOverlayPose = { {0, 0, 0, 1}, centre };
+	const idVec3 o( pointerPose.position.x, pointerPose.position.y, pointerPose.position.z );
+	const idVec3 dir = XrPoseForward( pointerPose );
+	if ( dir.z > -1e-4f ) {
+		return idVec2( -1, -1 );
 	}
-
-	idVec2 intersection ( pointerInUiOrigin.x + t * pointerDir.x, pointerInUiOrigin.y + t * pointerDir.y );
-	idVec2 overlaySize = idVec2( vr_uiOverlayAspect.GetFloat(), 1 ) * vr_uiOverlayHeight.GetFloat();
-	idVec2 upperLeft = -.5f * overlaySize;
-	intersection -= upperLeft;
-	intersection /= overlaySize;
-	return idVec2( intersection.x, 1 - intersection.y );
+	const float t = ( centre.z - o.z ) / dir.z;
+	if ( t < 0 ) {
+		return idVec2( -1, -1 );
+	}
+	const idVec2 size = UiOverlaySize();
+	const idVec3 hit = o + dir * t;
+	return idVec2( ( hit.x - centre.x ) / size.x + 0.5f, 0.5f - ( hit.y - centre.y ) / size.y );
 }
 
 void OpenXRInput::ClearInputState() {
