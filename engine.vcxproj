@@ -422,6 +422,7 @@
     <ClInclude Include="game\vr\VRClimb.h" />
     <ClInclude Include="game\vr\VRSpyglass.h" />
     <ClInclude Include="game\vr\VRConsumables.h" />
+    <ClInclude Include="game\vr\VRGripMesh.h" />
     <ClInclude Include="game\HidingSpotSearchCollection.h" />
     <ClInclude Include="game\Http\HttpConnection.h" />
     <ClInclude Include="game\Http\HttpRequest.h" />
@@ -1098,6 +1099,7 @@
     <ClCompile Include="game\vr\VRClimb.cpp" />
     <ClCompile Include="game\vr\VRSpyglass.cpp" />
     <ClCompile Include="game\vr\VRConsumables.cpp" />
+    <ClCompile Include="game\vr\VRGripMesh.cpp" />
     <ClCompile Include="game\HidingSpotSearchCollection.cpp" />
     <ClCompile Include="game\Http\HttpConnection.cpp" />
     <ClCompile Include="game\Http\HttpRequest.cpp" />

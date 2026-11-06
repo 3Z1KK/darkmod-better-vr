@@ -80,6 +80,7 @@ public:
 	struct grip_t {
 		idVec3		anchor;			// grip point (palm centre)
 		idMat3		handAxis;		// hand orientation
+		idMat3		drawAxis;		// the drawn hand's orientation (the palm turned onto the mesh), usually handAxis
 		idVec3		contactPoint;	// nearest surface point found when gripping
 		idVec3		contactNormal;	// surface normal there (zero if unknown)
 		idVec3		controllerOffset;	// grip point relative to the controller, in controller space
@@ -134,6 +135,8 @@ private:
 	void			StartInteraction( idPlayer *player );
 	void			MoveFreeHand( idPlayer *player );
 	void			FindContact( idEntity *ent, int bodyId );
+	// the palm close to the drawn mesh and facing it: the grip pose (world) with the palm on the mesh
+	bool			SnapToMesh( idEntity *ent, int bodyId, idVec3 &gripOrigin, idMat3 &gripAxis ) const;
 	void			BumpObject( idPlayer *player, const trace_t &tr );
 	void			UpdateRenderEntity();
 
@@ -171,6 +174,9 @@ private:
 	void			PressHandle( bool down );
 
 	void			UpdateFingers( float dt );
+	// fingers closed around the drawn mesh: 0 = no (collision box), 1 = to be found, 2 = found (meshCurls)
+	int				meshCurlsState = 0;
+	float			meshCurls[idVRHandModel::NUM_FINGERS] = {};
 
 	idVRHandModel	glove;
 	bool			gloveTried = false;

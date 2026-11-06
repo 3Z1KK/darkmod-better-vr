@@ -17,6 +17,7 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 
 #include "game/Game_local.h"
 #include "game/vr/VRHands.h"
+#include "game/vr/VRGripMesh.h"
 #include "game/vr/VRConsumables.h"
 #include "game/Inventory/Inventory.h"
 #include "game/Moveable.h"
@@ -35,6 +36,10 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 extern idCVar vr_readablesInHand;
 
 idCVar vr_handsEnable( "vr_handsEnable", "1", CVAR_GAME | CVAR_BOOL, "VR: interact with the world through tracked hands" );
+idCVar vr_gripSnap( "vr_gripSnap", "1", CVAR_GAME | CVAR_BOOL, "VR: a grab close to an object's drawn surface puts the palm on the surface and closes the fingers around the drawn mesh (not the collision box)" );
+idCVar vr_gripSnapDistance( "vr_gripSnapDistance", "3", CVAR_GAME | CVAR_FLOAT, "VR: the palm snaps onto the drawn surface only if it is this close to it (units, 3 = 7 cm); further away the grab is as before" );
+idCVar vr_gripSnapAngle( "vr_gripSnapAngle", "50", CVAR_GAME | CVAR_FLOAT, "VR: ... and only if the palm faces the surface within this angle (degrees)" );
+idCVar vr_gripSnapGap( "vr_gripSnapGap", "0.3", CVAR_GAME | CVAR_FLOAT, "VR: the snapped palm sits this far off the surface (units)" );
 idCVar vr_handTouchRadius( "vr_handTouchRadius", "2.5", CVAR_GAME | CVAR_FLOAT, "VR: radius (game units) around the palm that counts as touching" );
 idCVar vr_handCollision( "vr_handCollision", "1", CVAR_GAME | CVAR_BOOL, "VR: free hands are stopped by walls and solid objects" );
 idCVar vr_handLiftMass( "vr_handLiftMass", "6", CVAR_GAME | CVAR_FLOAT, "VR: the heaviest mass one hand can hold up against gravity" );
@@ -609,6 +614,81 @@ void idVRHand::FindContact( idEntity *ent, int bodyId ) {
 	}
 }
 
+/*
+ * Snapping the palm onto the drawn mesh. Only when the palm is already close to the drawn surface (vr_gripSnapDistance)
+ * and faces it (vr_gripSnapAngle): the snap then moves the grip a few centimetres at most, a light thing moves that
+ * bit into the hand and a heavy one isn't pulled at all (see StartInteraction). Further away, or turned away, the
+ * grab is the old one.
+ */
+bool idVRHand::SnapToMesh( idEntity *ent, int bodyId, idVec3 &gripOrigin, idMat3 &gripAxis ) const {
+	if ( !vr_gripSnap.GetBool() || bodyId != 0 || ent == nullptr ) {
+		return false;
+	}
+	const idList<idVec3> *tris = idVRGripMesh::Get( ent );
+	if ( tris == nullptr ) {
+		return false;
+	}
+	idPhysics *phys = ent->GetPhysics();
+	const idVec3 bodyOrigin = phys->GetOrigin( bodyId );
+	const idMat3 bodyAxis = phys->GetAxis( bodyId );
+	const float side = index == 0 ? 1.0f : -1.0f;
+	const idMat3 &axis = input.axis;
+	// the palm's surface (the front of the palm box, see MoveFreeHand) and the way it faces
+	const idVec3 palmLocal( 0.0f, 0.55f * side, 2.2f );
+	const idVec3 palm = physPos + palmLocal * axis;
+	const idVec3 facing = axis[1] * -side;
+
+	const float maxDist = vr_gripSnapDistance.GetFloat();
+	idVec3 q, n;
+	if ( !idVRGripMesh::Nearest( *tris, ( palm - bodyOrigin ) * bodyAxis.Transpose(), maxDist, q, n ) ) {
+		HandsDebug( "hand %d: %s's drawn surface is too far from the palm, normal grip", index, ent->name.c_str() );
+		return false;
+	}
+	const idVec3 point = bodyOrigin + q * bodyAxis;
+	idVec3 normal = n * bodyAxis;
+	idVec3 toSurface = point - palm;
+	const float dist = toSurface.Normalize();
+	// the normal out of the surface, towards the palm
+	if ( dist > 0.2f ? normal * toSurface > 0.0f : normal * facing > 0.0f ) {
+		normal = -normal;
+	}
+	if ( dist > 0.2f && toSurface * facing < -0.2f ) {
+		HandsDebug( "hand %d: %s's surface is behind the palm, normal grip", index, ent->name.c_str() );
+		return false;
+	}
+	const float cosAngle = -( normal * facing );
+	if ( cosAngle < idMath::Cos( DEG2RAD( vr_gripSnapAngle.GetFloat() ) ) ) {
+		HandsDebug( "hand %d: the palm doesn't face %s (%.0f deg), normal grip", index, ent->name.c_str(), RAD2DEG( idMath::ACos( idMath::ClampFloat( -1.0f, 1.0f, cosAngle ) ) ) );
+		return false;
+	}
+
+	// turn the hand the least way that makes the palm face the surface
+	idMat3 snapped = axis;
+	idVec3 turnAxis = facing.Cross( -normal );
+	const float s = turnAxis.Normalize();
+	if ( s > 1e-4f ) {
+		const float angle = RAD2DEG( idMath::ATan( s, cosAngle ) );
+		float best = -2.0f;
+		for ( int sign = -1; sign <= 1; sign += 2 ) {
+			const idRotation rot( vec3_origin, turnAxis, angle * sign );
+			idMat3 m;
+			for ( int r = 0; r < 3; r++ ) {
+				m[r] = axis[r];
+				rot.RotatePoint( m[r] );
+			}
+			const float match = -( ( m[1] * -side ) * normal );
+			if ( match > best ) {
+				best = match;
+				snapped = m;
+			}
+		}
+	}
+	gripAxis = snapped;
+	gripOrigin = point + normal * vr_gripSnapGap.GetFloat() - palmLocal * snapped;
+	HandsDebug( "hand %d: palm onto %s's mesh (%.1f units, %.0f deg)", index, ent->name.c_str(), dist, RAD2DEG( idMath::ACos( idMath::ClampFloat( -1.0f, 1.0f, cosAngle ) ) ) );
+	return true;
+}
+
 idVec3 idVRHand::GetGripTarget() const {
 	return input.pos + grip.controllerOffset * input.axis;
 }
@@ -635,6 +715,7 @@ void idVRHand::HoldEntity( idPlayer *player, idEntity *ent, int bodyId, const id
 	heldBodyId = bodyId;
 	gripDown = true;
 	zoneArmed = false;
+	meshCurlsState = 0;
 	slipTime = 0;
 	carryFromPouch = false;
 	carryKinematic = false;
@@ -652,6 +733,7 @@ void idVRHand::HoldEntity( idPlayer *player, idEntity *ent, int bodyId, const id
 	} else if ( CanHold( ent ) ) {
 		grip.anchor = anchor;
 		grip.handAxis = handAxisInBody;
+		grip.drawAxis = handAxisInBody;
 		grip.controllerOffset = controllerOffset;
 		grip.contactPoint = anchor;
 		grip.contactNormal.Zero();
@@ -674,6 +756,7 @@ void idVRHand::HoldEntity( idPlayer *player, idEntity *ent, int bodyId, const id
 
 void idVRHand::StartInteraction( idPlayer *player ) {
 	zoneArmed = false;
+	meshCurlsState = 0;
 	idEntity *ent = touched.GetEntity();
 	if ( ent == nullptr ) {
 		return;
@@ -719,7 +802,15 @@ void idVRHand::StartInteraction( idPlayer *player ) {
 		// a key, lockpick or anything smaller than a vase: held exactly where the hand touched it, weightless
 		const idVec3 bodyOrigin = ent->GetPhysics()->GetOrigin();
 		const idMat3 bodyAxisT = ent->GetPhysics()->GetAxis().Transpose();
-		HoldEntity( player, ent, 0, ( physPos - bodyOrigin ) * bodyAxisT, input.axis * bodyAxisT, ( physPos - input.pos ) * input.axis.Transpose() );
+		idVec3 snapOrigin;
+		idMat3 snapAxis;
+		if ( !idVRBow::IsArrow( ent ) && SnapToMesh( ent, 0, snapOrigin, snapAxis ) ) {
+			// the palm on the drawn surface: the thing comes that little bit into the hand, as the hand holds it
+			HoldEntity( player, ent, 0, ( snapOrigin - bodyOrigin ) * bodyAxisT, snapAxis * bodyAxisT, vec3_zero );
+			meshCurlsState = 1;
+		} else {
+			HoldEntity( player, ent, 0, ( physPos - bodyOrigin ) * bodyAxisT, input.axis * bodyAxisT, ( physPos - input.pos ) * input.axis.Transpose() );
+		}
 		// weightless things are in one hand only: grabbing it with the other hand takes it over
 		player->vrHands.TakeOver( player, index, ent );
 		return;
@@ -734,8 +825,19 @@ void idVRHand::StartInteraction( idPlayer *player ) {
 		const idMat3 bodyAxisT = phys->GetAxis( heldBodyId ).Transpose();
 		grip.anchor = ( physPos - bodyOrigin ) * bodyAxisT;
 		grip.handAxis = input.axis * bodyAxisT;
+		grip.drawAxis = grip.handAxis;
 		grip.controllerOffset = ( physPos - input.pos ) * input.axis.Transpose();
 		FindContact( ent, heldBodyId );
+		idVec3 snapOrigin;
+		idMat3 snapAxis;
+		if ( SnapToMesh( ent, heldBodyId, snapOrigin, snapAxis ) ) {
+			// the drawn hand on the drawn surface; the grip point is where the controller is now, so nothing is pulled
+			// (a crate doesn't jump to the hand) and the wrist keeps turning the object from the controller's angle
+			grip.anchor = ( snapOrigin - bodyOrigin ) * bodyAxisT;
+			grip.controllerOffset = ( snapOrigin - input.pos ) * input.axis.Transpose();
+			grip.drawAxis = snapAxis * bodyAxisT;
+			meshCurlsState = 1;
+		}
 		slipTime = 0;
 		interaction = IK_HOLD;
 		phys->Activate();
@@ -777,6 +879,7 @@ void idVRHand::StartInteraction( idPlayer *player ) {
 		const idMat3 bodyAxisT = phys->GetAxis().Transpose();
 		grip.anchor = ( physPos - phys->GetOrigin() ) * bodyAxisT;
 		grip.handAxis = input.axis * bodyAxisT;
+		grip.drawAxis = grip.handAxis;
 		grip.controllerOffset = ( physPos - input.pos ) * input.axis.Transpose();
 		grip.contactPoint = grip.anchor;
 		grip.contactNormal.Zero();
@@ -1053,7 +1156,34 @@ void idVRHand::UpdateFingers( float dt ) {
 	}
 	float targets[idVRHandModel::NUM_FINGERS];
 	idEntity *ent = held.GetEntity();
-	if ( ( interaction == IK_HOLD || interaction == IK_CARRY ) && ent != nullptr ) {
+	if ( ( interaction == IK_HOLD || interaction == IK_CARRY ) && ent != nullptr && meshCurlsState != 0 ) {
+		if ( meshCurlsState == 1 ) {
+			// once, with the hand where it now holds: close the fingers around the drawn mesh near the hand
+			meshCurlsState = 0;
+			const idList<idVec3> *tris = idVRGripMesh::Get( ent );
+			if ( tris != nullptr ) {
+				idPhysics *phys = ent->GetPhysics();
+				const int body = interaction == IK_HOLD ? heldBodyId : 0;
+				const idVec3 bodyOrigin = phys->GetOrigin( body );
+				const idMat3 bodyAxis = phys->GetAxis( body );
+				idList<idVec3> nearTris;
+				idVRGripMesh::Near( *tris, ( visualPos - bodyOrigin ) * bodyAxis.Transpose(), 14.0f, nearTris );
+				for ( idVec3 &v : nearTris ) {
+					v = bodyOrigin + v * bodyAxis;
+				}
+				glove.FindContactCurlsMesh( nearTris, 85.0f, meshCurls );
+				meshCurlsState = 2;
+				HandsDebug( "hand %d: fingers around %s's mesh: %.0f %.0f %.0f %.0f %.0f (%d triangles near)", index, ent->name.c_str(),
+					meshCurls[0], meshCurls[1], meshCurls[2], meshCurls[3], meshCurls[4], nearTris.Num() / 3 );
+			}
+		}
+		for ( int f = 0; f < idVRHandModel::NUM_FINGERS; f++ ) {
+			targets[f] = meshCurls[f];
+		}
+		if ( meshCurlsState == 0 ) {
+			glove.FindContactCurls( ent->GetPhysics()->GetClipModel( interaction == IK_HOLD ? heldBodyId : 0 ), 85.0f, targets );
+		}
+	} else if ( ( interaction == IK_HOLD || interaction == IK_CARRY ) && ent != nullptr ) {
 		glove.FindContactCurls( ent->GetPhysics()->GetClipModel( interaction == IK_HOLD ? heldBodyId : 0 ), 85.0f, targets );
 	} else if ( interaction == IK_BOW ) {
 		// a fist around the bow's grip
@@ -1104,6 +1234,9 @@ void idVRHand::UpdateVisual( float dt ) {
 		case IK_MOVER:
 			// the drawn hand stays on the grip point, even if the controller moved on
 			GetGripWorld( visualPos, visualAxis );
+			if ( held.GetEntity() != nullptr ) {
+				visualAxis = grip.drawAxis * held.GetEntity()->GetPhysics()->GetAxis( heldBodyId );
+			}
 			break;
 		case IK_CARRY:
 		case IK_BOW:
@@ -1327,6 +1460,7 @@ void idVRHand::Update( idPlayer *player, const vrHandInput_t &in, float dt ) {
 */
 
 void idVRHands::Init() {
+	idVRGripMesh::Clear();
 	hands[0].Init( 0 );
 	hands[1].Init( 1 );
 	highlighted.Clear();

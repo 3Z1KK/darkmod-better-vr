@@ -50,6 +50,8 @@ public:
 	void			MoveFingers( const float targets[NUM_FINGERS], float dt );
 	// how far each finger can curl before it touches the given clip model (degrees per joint)
 	void			FindContactCurls( const idClipModel *clip, float maxCurl, float out[NUM_FINGERS] );
+	// the same against triangles (3 world points each), e.g. the drawn mesh of a held object
+	void			FindContactCurlsMesh( const idList<idVec3> &tris, float maxCurl, float out[NUM_FINGERS] );
 
 	// world position and axis of a joint in the current pose
 	bool			GetJointWorld( int joint, idVec3 &pos, idMat3 &axis ) const;

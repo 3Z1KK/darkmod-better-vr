@@ -16,9 +16,11 @@ Project: The Dark Mod (http://www.thedarkmod.com/)
 #include "precompiled.h"
 #pragma hdrstop
 
+#include "game/vr/VRGripMesh.h"
 #include "game/Game_local.h"
 #include "game/vr/VRHandModel.h"
 
+idCVar vr_fingerContactRadius( "vr_fingerContactRadius", "0.45", CVAR_GAME | CVAR_FLOAT, "VR: a finger closing around a held object's drawn mesh stops this close to it (units)" );
 idCVar vr_handModel( "vr_handModel", "1", CVAR_GAME | CVAR_BOOL, "VR: draw the glove hands (0 = placeholder boxes)" );
 idCVar vr_handModelOffset( "vr_handModelOffset", "0 0 0", CVAR_GAME | CVAR_ARCHIVE, "VR: glove position relative to the controller grip (x = towards the thumb, y = out of the back of the left hand, z = towards the wrist), game units" );
 idCVar vr_handModelAngles( "vr_handModelAngles", "0 0 0", CVAR_GAME | CVAR_ARCHIVE, "VR: glove rotation relative to the controller grip (pitch yaw roll, degrees; mirrored for the right hand)" );
@@ -219,6 +221,68 @@ void idVRHandModel::FindContactCurls( const idClipModel *clip, float maxCurl, fl
 				const idVec3 world = modelOrigin + pts[p] * modelAxis;
 				if ( gameLocal.clip.ContentsModel( world, nullptr, mat3_identity, -1, clip->Handle(), clip->GetOrigin(), clip->GetAxis() ) ) {
 					out[f] = Max( 0.0f, a - step * 0.5f );
+					done[f] = true;
+					break;
+				}
+			}
+		}
+		if ( all ) {
+			break;
+		}
+	}
+}
+
+void idVRHandModel::FindContactCurlsMesh( const idList<idVec3> &tris, float maxCurl, float out[NUM_FINGERS] ) {
+	for ( int f = 0; f < NUM_FINGERS; f++ ) {
+		out[f] = maxCurl;
+	}
+	const int numTris = tris.Num() / 3;
+	if ( !IsValid() || numTris == 0 ) {
+		return;
+	}
+	// a finger touches when one of its points comes within its radius of a triangle
+	const float radius = vr_fingerContactRadius.GetFloat();
+	idList<idBounds> triBounds;
+	triBounds.SetNum( numTris );
+	for ( int t = 0; t < numTris; t++ ) {
+		triBounds[t].FromPoints( &tris[t * 3], 3 );
+		triBounds[t].ExpandSelf( radius );
+	}
+	auto touches = [&]( const idVec3 &p ) {
+		for ( int t = 0; t < numTris; t++ ) {
+			if ( !triBounds[t].ContainsPoint( p ) ) {
+				continue;
+			}
+			const idVec3 q = idVRGripMesh::ClosestOnTriangle( p, tris[t * 3], tris[t * 3 + 1], tris[t * 3 + 2] );
+			if ( ( q - p ).LengthSqr() < Square( radius ) ) {
+				return true;
+			}
+		}
+		return false;
+	};
+	float test[NUM_FINGERS];
+	bool done[NUM_FINGERS] = {};
+	const float step = 2.5f;
+	for ( float a = 0.0f; a <= maxCurl; a += step ) {
+		for ( int f = 0; f < NUM_FINGERS; f++ ) {
+			test[f] = done[f] ? out[f] : a;
+		}
+		ComputeJoints( test, scratchMats );
+		bool all = true;
+		for ( int f = 0; f < NUM_FINGERS; f++ ) {
+			if ( done[f] ) {
+				continue;
+			}
+			all = false;
+			const idVec3 j1 = scratchMats[fingerJoints[f][0]].ToVec3();
+			const idVec3 j2 = scratchMats[fingerJoints[f][1]].ToVec3();
+			const idJointMat &m3 = scratchMats[fingerJoints[f][2]];
+			const idVec3 j3 = m3.ToVec3();
+			const idVec3 tip = j3 + m3.ToMat3()[0] * fingerTip[f];
+			const idVec3 pts[6] = { ( j1 + j2 ) * 0.5f, j2, ( j2 + j3 ) * 0.5f, j3, ( j3 + tip ) * 0.5f, tip };
+			for ( int k = 0; k < 6; k++ ) {
+				if ( touches( modelOrigin + pts[k] * modelAxis ) ) {
+					out[f] = Max( 0.0f, a - step );
 					done[f] = true;
 					break;
 				}
