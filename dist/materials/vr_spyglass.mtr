@@ -1,0 +1,58 @@
+// VR spyglass (game/vr/VRSpyglass.cpp)
+
+// The eyepiece: the live picture of the camera at the far end (remote render, like the camera screens), darkened
+// towards the rim. shaderParm4/5 = picture scale, 6/7 = translate (flips, vr_spyglassImageFlip), 8 = live (1) or
+// dark glass (0, too far from the player)
+vr/spyglass_lens
+{
+	noShadows
+	noSelfShadow
+	{
+		if ( parm8 > 0.5 )
+		blend	gl_one, gl_zero
+		remoteRenderMap
+		remoteResolution 512 512
+		scale	parm4, parm5
+		translate	parm6, parm7
+		map		"_dynamic"
+	}
+	{
+		if ( parm8 < 0.5 )
+		blend	gl_one, gl_zero
+		map		_white
+		rgb		0.015
+	}
+	{
+		blend	filter
+		map		textures/vr/spyglass/vignette
+	}
+}
+
+// the objective end: dark glass
+vr/spyglass_cap
+{
+	noShadows
+	noSelfShadow
+	{
+		blend	diffusemap
+		map		_white
+		rgb		0.02
+	}
+	{
+		blend	specularmap
+		map		_white
+		rgb		0.5
+	}
+}
+
+// at the eye: the dark rim around the picture
+vr/spyglass_rim
+{
+	noShadows
+	noSelfShadow
+	{
+		blend	gl_one, gl_zero
+		map		_white
+		rgb		0
+	}
+}

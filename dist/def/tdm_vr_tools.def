@@ -1,0 +1,30 @@
+/**
+ * VR: lockpicks as physical tools in the hand (the inventory lockpicks themselves stay in the inventory).
+ */
+
+entityDef atdm:vr_lockpick_base
+{
+	"inherit"			"atdm:moveable_base"
+	"editor_usage"		"VR lockpick in the hand (spawned by the game, don't place)"
+	"mass"				"0.1"
+	"friction"			"0.3"
+	"bouncyness"		"0.1"
+	"snd_bounce"		"tdm_impact_dagger01"
+	"frobable"			"1"
+	"grabable"			"1"
+	"vr_weightless"		"1"
+}
+
+entityDef atdm:vr_lockpick_triangle
+{
+	"inherit"			"atdm:vr_lockpick_base"
+	"model"				"models/darkmod/player_equipment/lockpick_triangle.lwo"
+	"lockpick_type_vr"	"t"
+}
+
+entityDef atdm:vr_lockpick_snake
+{
+	"inherit"			"atdm:vr_lockpick_base"
+	"model"				"models/darkmod/player_equipment/lockpick_snake.lwo"
+	"lockpick_type_vr"	"s"
+}

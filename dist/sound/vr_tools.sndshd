@@ -1,0 +1,11 @@
+// VR tools and pouch: local effects only (played without sound propagation, guards don't hear them)
+
+vr_sword_draw		{ minDistance 1 maxDistance 15 volume -4 no_occlusion sound/vr/sword_draw.wav }
+vr_sword_sheath		{ minDistance 1 maxDistance 15 volume -4 no_occlusion sound/vr/sword_sheath.wav }
+vr_leather_draw		{ minDistance 1 maxDistance 15 volume -2 no_occlusion sound/vr/leather_draw.wav }
+vr_leather_holster	{ minDistance 1 maxDistance 15 volume -2 no_occlusion sound/vr/leather_holster.wav }
+vr_pick_draw		{ minDistance 1 maxDistance 15 volume -4 no_occlusion sound/vr/pick_draw.wav }
+vr_pick_holster		{ minDistance 1 maxDistance 15 volume -4 no_occlusion sound/vr/pick_holster.wav }
+vr_pouch_open		{ minDistance 1 maxDistance 15 volume -4 no_occlusion sound/vr/pouch_open.wav }
+vr_pouch_close		{ minDistance 1 maxDistance 15 volume -4 no_occlusion sound/vr/pouch_close.wav }
+vr_pouch_scroll		{ minDistance 1 maxDistance 15 volume -8 no_occlusion sound/vr/pouch_scroll.wav }
